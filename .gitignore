@@ -1,0 +1,11 @@
+# Xcode
+**/xcuserdata/
+*.xcworkspace/xcuserdata
+DerivedData/
+build/
+
+# Dev doc (internal reference only)
+DEVELOPMENT.md
+
+# macOS
+.DS_Store
