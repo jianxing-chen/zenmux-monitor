@@ -337,8 +337,16 @@ struct MenuHeaderView: View {
                 }
             } else {
                 Image(systemName: "circle.dotted")
-                Text("未连接")
-                    .font(.headline)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("未连接")
+                        .font(.headline)
+                    if let err = apiService.lastError {
+                        Text(err)
+                            .font(.caption2)
+                            .foregroundStyle(.red)
+                            .lineLimit(2)
+                    }
+                }
             }
             Spacer()
         }

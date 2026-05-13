@@ -301,13 +301,15 @@ struct SettingsView: View {
         HStack {
             Spacer()
             Button("关闭") {
+                if !apiKeyInput.trimmingCharacters(in: .whitespaces).isEmpty {
+                    settings.apiKey = apiKeyInput
+                }
                 settings.monitoredAppIDs = monitoredApps
                 settings.customApps = customApps
                 ProcessMonitor.shared.refresh()
-                // 保存后立即拉取数据，不用等下一个刷新周期
-                ZenmuxAPIService.shared.startAutoRefresh(interval: settings.refreshInterval)
-                Task { await ZenmuxAPIService.shared.fetchSubscription(force: true) }
                 NSApp.keyWindow?.close()
+                // 关窗后启动刷新
+                ZenmuxAPIService.shared.startAutoRefresh(interval: settings.refreshInterval)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.regular)
