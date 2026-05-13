@@ -307,9 +307,11 @@ struct SettingsView: View {
                 settings.monitoredAppIDs = monitoredApps
                 settings.customApps = customApps
                 ProcessMonitor.shared.refresh()
+                // 先启动刷新再关窗（确保 API Key 已写入）
+                let svc = ZenmuxAPIService.shared
+                svc.startAutoRefresh(interval: settings.refreshInterval)
+                Task { await svc.fetchSubscription(force: true) }
                 NSApp.keyWindow?.close()
-                // 关窗后启动刷新
-                ZenmuxAPIService.shared.startAutoRefresh(interval: settings.refreshInterval)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.regular)

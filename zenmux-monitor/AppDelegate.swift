@@ -20,17 +20,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private let settings = SettingsManager.shared
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)  // 隐藏 Dock 图标
+        NSApp.setActivationPolicy(.accessory)
         setupStatusItem()
         observeProcessMonitor()
         observeAPIService()
-        startMonitoringIfNeeded()
-    }
-
-    /// 启动即判断：始终刷新 or 有监控 App → 立刻拉数据；否则等通知
-    private func startMonitoringIfNeeded() {
-        let pm = ProcessMonitor.shared
-        if SettingsManager.shared.alwaysRefresh || pm.isAnyMonitoredAppRunning {
+        // 有 API Key 就直接开始刷新，不等进程检测
+        if SettingsManager.shared.apiKey?.isEmpty == false {
             apiService.startAutoRefresh(interval: SettingsManager.shared.refreshInterval)
         }
     }
@@ -273,6 +268,14 @@ final class StatusBarView: NSView {
             let y = (bounds.height - size) / 2
             icon.draw(in: NSRect(x: x, y: y, width: size, height: size),
                       from: .zero, operation: .sourceOver, fraction: 0.85)
+        }
+        // 有错误时显示红色感叹号
+        if apiService?.lastError != nil {
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.boldSystemFont(ofSize: 9),
+                .foregroundColor: NSColor.systemRed
+            ]
+            "!".draw(at: NSPoint(x: bounds.width - 10, y: 2), withAttributes: attrs)
         }
     }
 
