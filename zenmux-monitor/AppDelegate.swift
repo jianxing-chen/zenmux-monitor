@@ -16,7 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var processObservers: [NSObjectProtocol] = []
     private var appearanceObservers: [NSObjectProtocol] = []
     private let apiService = ZenmuxAPIService.shared
-    private let statusView = StatusBarView(frame: NSRect(x: 0, y: 0, width: 47, height: 22))
+    private let statusView = StatusBarView(frame: NSRect(x: 0, y: 0, width: 49, height: 22))
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -122,7 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         let headerItem = NSMenuItem()
         let headerView = MenuHeaderView(apiService: apiService)
         let hosting = NSHostingView(rootView: headerView.frame(width: 260))
-        hosting.frame = NSRect(x: 0, y: 0, width: 260, height: 40)
+        hosting.frame = NSRect(x: 0, y: 0, width: 260, height: 44)
         headerItem.view = hosting
         menu.addItem(headerItem)
 
@@ -133,7 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             let quotaItem = NSMenuItem()
             let quotaView = MenuQuotaView(data: data)
             let quotaHosting = NSHostingView(rootView: quotaView.frame(width: 260))
-            quotaHosting.frame = NSRect(x: 0, y: 0, width: 260, height: 185)
+            quotaHosting.frame = NSRect(x: 0, y: 0, width: 260, height: 205)
             quotaItem.view = quotaHosting
             menu.addItem(quotaItem)
         } else {
@@ -239,7 +239,7 @@ final class StatusBarView: NSView {
     }
 
     override var intrinsicContentSize: NSSize {
-        NSSize(width: 47, height: 22)
+        NSSize(width: 49, height: 22)
     }
 
     func renderedImage() -> NSImage {
@@ -410,7 +410,7 @@ final class StatusBarView: NSView {
             barBackground: NSColor(calibratedWhite: 0.72, alpha: 1.0),
             pausedBackground: NSColor(calibratedWhite: 0.82, alpha: 1.0),
             pausedFill: NSColor(calibratedWhite: 0.55, alpha: 1.0),
-            lowUsage: NSColor.systemBlue.withAlphaComponent(0.65),
+            lowUsage: NSColor(calibratedRed: 0.15, green: 0.55, blue: 1.0, alpha: 1.0),
             midUsage: NSColor.systemOrange.withAlphaComponent(0.65),
             highUsage: NSColor.systemRed.withAlphaComponent(0.65),
             primaryText: textColor,
@@ -422,7 +422,7 @@ final class StatusBarView: NSView {
         let leadingInset: CGFloat = 0
         let trailingInset: CGFloat = 0
         let gap: CGFloat = 5
-        let textWidth: CGFloat = 15
+        let textWidth: CGFloat = 21
         let textX = bounds.width - trailingInset - textWidth
         let barWidth = max(14, textX - gap - leadingInset)
         return (leadingInset, barWidth, textX)
@@ -465,14 +465,14 @@ struct MenuHeaderView: View {
                     HStack(spacing: 4) {
                         Circle().fill(statusColor(status)).frame(width: 5, height: 5)
                         Text(status.displayName)
-                            .font(.caption)
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
                         Text("到期 \(formatDate(data.plan.expires_at))")
-                            .font(.caption2)
+                            .font(.caption)
                             .foregroundStyle(.tertiary)
                         if apiService.isPaused {
                             Text("⏸ 暂停")
-                                .font(.caption2)
+                                .font(.caption)
                                 .foregroundStyle(.tertiary)
                         }
                     }
@@ -484,7 +484,7 @@ struct MenuHeaderView: View {
                         .font(.headline)
                     if let err = apiService.lastError {
                         Text(err)
-                            .font(.caption2)
+                            .font(.caption)
                             .foregroundStyle(.red)
                             .lineLimit(2)
                     }
@@ -547,34 +547,34 @@ struct MenuQuotaView: View {
             // 月度上限
             HStack {
                 Image(systemName: "chart.bar.fill")
-                    .font(.caption).foregroundStyle(.purple)
+                    .font(.subheadline).foregroundStyle(.purple)
                 Text("当月上限")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.subheadline).foregroundStyle(.secondary)
                 Spacer()
                 Text("\(formatNum(data.quota_monthly.max_flows)) flows")
-                    .font(.caption).fontWeight(.medium)
+                    .font(.subheadline).fontWeight(.medium)
                 Text("($\(formatNum(data.quota_monthly.max_value_usd)))")
-                    .font(.caption).foregroundStyle(.tertiary)
+                    .font(.subheadline).foregroundStyle(.tertiary)
             }
 
             // 汇率信息
             HStack {
                 Image(systemName: "dollarsign.circle")
-                    .font(.caption).foregroundStyle(.green)
+                    .font(.subheadline).foregroundStyle(.green)
                 Text("汇率")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.subheadline).foregroundStyle(.secondary)
                 Spacer()
                 Text("$\(String(format: "%.4f", data.effective_usd_per_flow))/flow")
-                    .font(.caption).foregroundStyle(.primary)
+                    .font(.subheadline).foregroundStyle(.primary)
             }
 
             if let updated = ZenmuxAPIService.shared.lastUpdated {
                 let api = ZenmuxAPIService.shared
                 HStack(spacing: 6) {
                     Image(systemName: "clock.arrow.trianglehead.counterclockwise.rotate.90")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.subheadline).foregroundStyle(.secondary)
                     Text("更新于 \(relativeTime(updated))")
-                        .font(.caption).foregroundStyle(.tertiary)
+                        .font(.subheadline).foregroundStyle(.tertiary)
                     Spacer()
                     Button {
                         if api.isPaused {
@@ -634,11 +634,11 @@ struct QuotaRow: View {
     var body: some View {
         VStack(spacing: 3) {
             HStack {
-                Image(systemName: icon).font(.subheadline).foregroundStyle(.blue)
-                Text(label).font(.subheadline).foregroundStyle(.secondary)
+                Image(systemName: icon).font(.body).foregroundStyle(.blue)
+                Text(label).font(.body).foregroundStyle(.secondary)
                 Spacer()
                 Text(String(format: "%.2f%%", pct * 100))
-                    .font(.subheadline).fontWeight(.medium).monospacedDigit()
+                    .font(.body).fontWeight(.medium).monospacedDigit()
                     .foregroundStyle(pct > 0.8 ? .red : pct > 0.5 ? .orange : .primary)
             }
 
@@ -654,16 +654,16 @@ struct QuotaRow: View {
 
             HStack {
                 Text("已用 \(String(format: "%.2f", used))/\(String(format: "%.2f", maxFlows)) flows")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.subheadline).foregroundStyle(.secondary)
                 Spacer()
                 Text("$\(String(format: "%.2f", usedUSD)) / $\(String(format: "%.2f", maxUSD))")
-                    .font(.caption).foregroundStyle(.tertiary)
+                    .font(.subheadline).foregroundStyle(.tertiary)
             }
 
             if let reset = resetsAt {
                 HStack {
                     Text("重置 \(formatReset(reset))")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.subheadline).foregroundStyle(.secondary)
                     Spacer()
                 }
             }
