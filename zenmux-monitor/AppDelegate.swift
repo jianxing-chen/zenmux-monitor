@@ -12,21 +12,31 @@ import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem!
-    private var statusView: StatusBarView!
     private var settingsWindow: NSWindow?
     private var isMenuOpen = false
     private var processObservers: [NSObjectProtocol] = []
+    private var appearanceObservers: [NSObjectProtocol] = []
     private let apiService = ZenmuxAPIService.shared
+    private let statusView = StatusBarView(frame: NSRect(x: 0, y: 0, width: 45, height: 22))
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         setupStatusItem()
+        _ = ProcessMonitor.shared
         observeProcessMonitor()
         observeAPIService()
-        // 有 API Key 就启动刷新
-        if SettingsManager.shared.apiKey?.isEmpty == false {
-            apiService.startAutoRefresh(interval: SettingsManager.shared.refreshInterval)
-        }
+        observeAppearanceChanges()
+        apiService.refreshPolicyDidChange(forceFetch: true)
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        let defaultCenter = NotificationCenter.default
+        processObservers.forEach { defaultCenter.removeObserver($0) }
+        processObservers.removeAll()
+
+        let distributedCenter = DistributedNotificationCenter.default()
+        appearanceObservers.forEach { distributedCenter.removeObserver($0) }
+        appearanceObservers.removeAll()
     }
 
     // MARK: - 进程启停监听（App 运行时刷新，退出后停刷新）
@@ -36,50 +46,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
         let o1 = center.addObserver(forName: .monitoredAppDidLaunch, object: nil, queue: .main) {
             [weak self] _ in
-            self?.apiService.startAutoRefresh(interval: SettingsManager.shared.refreshInterval)
-            Task { await self?.apiService.fetchSubscription(force: true) }
+            Task { @MainActor [weak self] in
+                self?.apiService.refreshPolicyDidChange(forceFetch: true)
+            }
         }
 
         let o2 = center.addObserver(forName: .monitoredAppDidTerminate, object: nil, queue: .main) {
             [weak self] _ in
-            self?.apiService.stopAutoRefresh()
-            self?.statusView?.needsDisplay = true
+            Task { @MainActor [weak self] in
+                self?.apiService.refreshPolicyDidChange()
+            }
         }
         processObservers = [o1, o2]
     }
 
-    // MARK: - 数据观察（递归订阅，持续刷新进度条 + 暂停状态）
+    // MARK: - 数据观察（状态变化时刷新进度条）
 
     @MainActor
     private func observeAPIService() {
-        withObservationTracking { [weak self] in
-            _ = self?.apiService.subscriptionData
-            _ = self?.apiService.lastUpdated
-            _ = self?.apiService.isPaused
-        } onChange: {
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                statusView?.needsDisplay = true
-                observeAPIService()
-            }
+        apiService.onStateChange = { [weak self] in
+            self?.updateStatusItemImage()
         }
+        updateStatusItemImage()
     }
 
     // MARK: - 状态栏项
 
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem.length = statusView.intrinsicContentSize.width
 
-        // 自定义绘制视图
-        statusView = StatusBarView(frame: NSRect(x: 0, y: 0, width: 45, height: 22))
         statusView.apiService = apiService
-        statusItem.button?.addSubview(statusView)
-        statusItem.button?.frame = statusView.frame
+
+        if let button = statusItem.button {
+            button.title = ""
+            button.imagePosition = .imageOnly
+            button.imageScaling = .scaleNone
+        }
+        updateStatusItemImage()
 
         // 懒加载菜单：仅点击时才构建 SwiftUI 视图
         let menu = NSMenu()
         menu.delegate = self
         statusItem.menu = menu
+    }
+
+    private func observeAppearanceChanges() {
+        let observer = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("AppleInterfaceThemeChangedNotification"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.updateStatusItemImage()
+            }
+        }
+        appearanceObservers = [observer]
+    }
+
+    @MainActor
+    private func updateStatusItemImage() {
+        guard let button = statusItem.button else { return }
+        statusView.appearance = resolvedStatusBarAppearance
+        button.image = statusView.renderedImage()
+        button.needsDisplay = true
+    }
+
+    private var resolvedStatusBarAppearance: NSAppearance {
+        NSApp.effectiveAppearance
     }
 
     // MARK: - 菜单构建（懒加载）
@@ -108,6 +142,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             loadingItem.isEnabled = false
             menu.addItem(loadingItem)
         }
+
+        menu.addItem(.separator())
+
+        // --- 文字颜色切换 ---
+        let isBlack = SettingsManager.shared.useBlackText
+        let colorItem = NSMenuItem(
+            title: isBlack ? "百分比颜色：◉ 黑色" : "百分比颜色：◉ 白色",
+            action: #selector(toggleTextColor),
+            keyEquivalent: ""
+        )
+        colorItem.target = self
+        menu.addItem(colorItem)
 
         menu.addItem(.separator())
 
@@ -148,6 +194,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         NSApplication.shared.terminate(nil)
     }
 
+    @objc private func toggleTextColor() {
+        let settings = SettingsManager.shared
+        settings.useBlackText.toggle()
+        updateStatusItemImage()
+    }
+
     // MARK: - NSMenuDelegate（懒加载菜单）
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -175,77 +227,110 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 final class StatusBarView: NSView {
     weak var apiService: ZenmuxAPIService?
 
+    private static let percentFont = NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .regular)
+    private static let pausedFont = NSFont.systemFont(ofSize: 7)
+
+    private struct Palette {
+        let barBackground: NSColor
+        let pausedBackground: NSColor
+        let pausedFill: NSColor
+        let lowUsage: NSColor
+        let midUsage: NSColor
+        let highUsage: NSColor
+        let primaryText: NSColor
+        let secondaryText: NSColor
+    }
+
     override var intrinsicContentSize: NSSize {
-        NSSize(width: 45, height: 22)
+        NSSize(width: 42, height: 22)
+    }
+
+    func renderedImage() -> NSImage {
+        let bounds = NSRect(origin: .zero, size: intrinsicContentSize)
+        guard let rep = bitmapImageRepForCachingDisplay(in: bounds) else {
+            return NSImage(size: intrinsicContentSize)
+        }
+
+        cacheDisplay(in: bounds, to: rep)
+        let image = NSImage(size: intrinsicContentSize)
+        image.addRepresentation(rep)
+        image.isTemplate = false
+        return image
     }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
+
         guard let data = apiService?.subscriptionData else {
             drawPlaceholder()
             return
         }
 
-        // 暂停状态：无监控 App 运行，仅显示最后已知数据 + 暂停标记
         if apiService?.isPaused == true {
             drawPaused(data)
             return
         }
 
+        let palette = currentPalette
+        let layout = normalLayoutMetrics
+
         let barH: CGFloat = 7
-        let barW = bounds.width - 24
         let spacing: CGFloat = 2
         let topY = bounds.height - barH - 4
         let bottomY = topY - barH - spacing
         let corner: CGFloat = 2
 
         // 进度条
-        drawBar(y: topY, width: barW, height: barH, pct: data.quota_5_hour.usage_percentage, radius: corner)
-        drawBar(y: bottomY, width: barW, height: barH, pct: data.quota_7_day.usage_percentage, radius: corner)
+        drawBar(x: layout.barX, y: topY, width: layout.barWidth, height: barH,
+                pct: data.quota_5_hour.usage_percentage, radius: corner, palette: palette)
+        drawBar(x: layout.barX, y: bottomY, width: layout.barWidth, height: barH,
+                pct: data.quota_7_day.usage_percentage, radius: corner, palette: palette)
 
-        // 百分比文字（白色，对齐各自进度条）
         let textAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 8, weight: .medium),
-            .foregroundColor: NSColor.white
+            .font: Self.percentFont,
+            .foregroundColor: palette.primaryText
         ]
-        let textX = barW + 6
         drawPercent(text: percentStr(data.quota_5_hour.usage_percentage),
-                    at: textX, barY: topY, barH: barH, attrs: textAttrs)
+                at: layout.textX, barY: topY, barH: barH, attrs: textAttrs)
         drawPercent(text: percentStr(data.quota_7_day.usage_percentage),
-                    at: textX, barY: bottomY, barH: barH, attrs: textAttrs)
+                at: layout.textX, barY: bottomY, barH: barH, attrs: textAttrs)
     }
 
     /// 暂停状态：显示缩略进度条 + ⏸ 图标
     private func drawPaused(_ data: ZenmuxSubscriptionData) {
+        let palette = currentPalette
+        let layout = pausedLayoutMetrics
         let barH: CGFloat = 5
-        let barW = bounds.width - 18
         let topY = bounds.height - barH - 5
         let bottomY = topY - barH - 2
 
         // 缩略进度条（灰色表示非实时）
-        drawDimmedBar(y: topY, width: barW, height: barH, pct: data.quota_5_hour.usage_percentage)
-        drawDimmedBar(y: bottomY, width: barW, height: barH, pct: data.quota_7_day.usage_percentage)
+        drawDimmedBar(x: layout.barX, y: topY, width: layout.barWidth, height: barH,
+                      pct: data.quota_5_hour.usage_percentage, palette: palette)
+        drawDimmedBar(x: layout.barX, y: bottomY, width: layout.barWidth, height: barH,
+                      pct: data.quota_7_day.usage_percentage, palette: palette)
 
         // ⏸ 符号
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 7),
-            .foregroundColor: NSColor.white.withAlphaComponent(0.4)
+            .font: Self.pausedFont,
+            .foregroundColor: palette.secondaryText
         ]
-        "⏸".draw(at: NSPoint(x: barW + 4, y: bottomY - 1), withAttributes: attrs)
+        "⏸".draw(at: NSPoint(x: layout.textX, y: bottomY - 1), withAttributes: attrs)
     }
 
-    private func drawDimmedBar(y: CGFloat, width: CGFloat, height: CGFloat, pct: Double) {
-        let barRect = NSRect(x: 4, y: y, width: width, height: height)
+    private func drawDimmedBar(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat,
+                               pct: Double, palette: Palette) {
+        let barRect = NSRect(x: x, y: y, width: width, height: height)
         let bg = NSBezierPath(roundedRect: barRect, xRadius: 2, yRadius: 2)
-        NSColor.white.withAlphaComponent(0.08).setFill()
+        palette.pausedBackground.setFill()
         bg.fill()
 
         let clamped = max(0, min(pct, 1))
         let fw = width * CGFloat(clamped)
         guard fw > 1 else { return }
 
-        let fgRect = NSRect(x: 4, y: y, width: fw, height: height)
-        NSColor.white.withAlphaComponent(0.25).setFill()
+        let fgRect = NSRect(x: x, y: y, width: fw, height: height)
+        palette.pausedFill.setFill()
         NSBezierPath(roundedRect: fgRect, xRadius: 2, yRadius: 2).fill()
     }
 
@@ -278,24 +363,25 @@ final class StatusBarView: NSView {
         }
     }
 
-    private func drawBar(y: CGFloat, width: CGFloat, height: CGFloat, pct: Double, radius: CGFloat) {
-        let barRect = NSRect(x: 4, y: y, width: width, height: height)
+    private func drawBar(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat,
+                         pct: Double, radius: CGFloat, palette: Palette) {
+        let barRect = NSRect(x: x, y: y, width: width, height: height)
 
         // 背景
         let bg = NSBezierPath(roundedRect: barRect, xRadius: radius, yRadius: radius)
-        NSColor.white.withAlphaComponent(0.15).setFill()
+        palette.barBackground.setFill()
         bg.fill()
 
         let clamped = max(0, min(pct, 1))
         let fw = width * CGFloat(clamped)
         guard fw > 1 else { return }
 
-        let fgRect = NSRect(x: 4, y: y, width: fw, height: height)
+        let fgRect = NSRect(x: x, y: y, width: fw, height: height)
 
         let color: NSColor
-        if pct > 0.8 { color = .systemRed }
-        else if pct > 0.5 { color = .systemOrange }
-        else { color = .systemBlue }
+        if pct > 0.8 { color = palette.highUsage }
+        else if pct > 0.5 { color = palette.midUsage }
+        else { color = palette.lowUsage }
 
         if fw < radius * 2 {
             color.setFill()
@@ -304,6 +390,63 @@ final class StatusBarView: NSView {
             color.setFill()
             NSBezierPath(roundedRect: fgRect, xRadius: radius, yRadius: radius).fill()
         }
+    }
+
+    private var currentPalette: Palette {
+        let textColor: NSColor = SettingsManager.shared.useBlackText ? .black : .white
+        let secondaryColor: NSColor = textColor.withAlphaComponent(0.55)
+
+        if isDarkMode {
+            return Palette(
+                barBackground: NSColor.white.withAlphaComponent(0.15),
+                pausedBackground: NSColor.white.withAlphaComponent(0.08),
+                pausedFill: NSColor.white.withAlphaComponent(0.25),
+                lowUsage: .systemBlue,
+                midUsage: .systemOrange,
+                highUsage: .systemRed,
+                primaryText: textColor,
+                secondaryText: secondaryColor
+            )
+        }
+
+        return Palette(
+            barBackground: NSColor.black.withAlphaComponent(0.10),
+            pausedBackground: NSColor.black.withAlphaComponent(0.05),
+            pausedFill: NSColor.black.withAlphaComponent(0.15),
+            lowUsage: .systemBlue,
+            midUsage: .systemOrange,
+            highUsage: .systemRed,
+            primaryText: textColor,
+            secondaryText: secondaryColor
+        )
+    }
+
+    private var normalLayoutMetrics: (barX: CGFloat, barWidth: CGFloat, textX: CGFloat) {
+        let leadingInset: CGFloat = 1
+        let trailingInset: CGFloat = 0
+        let gap: CGFloat = 2
+        let textWidth = ceil(("100%" as NSString).size(withAttributes: [.font: Self.percentFont]).width)
+        let textX = bounds.width - trailingInset - textWidth
+        let barWidth = max(14, textX - gap - leadingInset)
+        return (leadingInset, barWidth, textX)
+    }
+
+    private var pausedLayoutMetrics: (barX: CGFloat, barWidth: CGFloat, textX: CGFloat) {
+        let leadingInset: CGFloat = 1
+        let trailingInset: CGFloat = 0
+        let gap: CGFloat = 2
+        let textWidth = ceil(("⏸" as NSString).size(withAttributes: [.font: Self.pausedFont]).width)
+        let textX = bounds.width - trailingInset - textWidth
+        let barWidth = max(18, textX - gap - leadingInset)
+        return (leadingInset, barWidth, textX)
+    }
+
+    private var isDarkMode: Bool {
+        let appearance = appearance ?? NSApp.effectiveAppearance
+        if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            return true
+        }
+        return UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark"
     }
 }
 
@@ -438,10 +581,9 @@ struct MenuQuotaView: View {
                     Spacer()
                     Button {
                         if api.isPaused {
-                            api.startAutoRefresh(interval: SettingsManager.shared.refreshInterval)
-                            Task { await api.fetchSubscription(force: true) }
+                            api.resumeAutoRefresh()
                         } else {
-                            api.stopAutoRefresh()
+                            api.pauseAutoRefresh()
                         }
                     } label: {
                         Image(systemName: api.isPaused ? "play.circle" : "pause.circle")
@@ -453,7 +595,7 @@ struct MenuQuotaView: View {
                     Button {
                         spinning = true
                         Task {
-                            await api.fetchSubscription(force: true)
+                            await api.refreshNow()
                             spinning = false
                         }
                     } label: {

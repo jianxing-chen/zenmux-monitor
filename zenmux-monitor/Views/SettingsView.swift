@@ -54,6 +54,9 @@ struct SettingsView: View {
             bottomBar
         }
         .frame(width: 420, height: 560)
+        .onDisappear {
+            persistAPIKey(forceFetch: true)
+        }
     }
 
     // MARK: - 标题栏
@@ -84,7 +87,7 @@ struct SettingsView: View {
                     .font(.caption)
 
                 Button("保存") {
-                    settings.apiKey = apiKeyInput
+                    persistAPIKey(forceFetch: true)
                     showKeySaved = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                         showKeySaved = false
@@ -141,7 +144,7 @@ struct SettingsView: View {
             .pickerStyle(.segmented)
             .onChange(of: refreshInterval) { _, newValue in
                 settings.refreshInterval = newValue
-                ZenmuxAPIService.shared.startAutoRefresh(interval: newValue)
+                apiService.settingsDidChange(forceFetch: true)
             }
         }
     }
@@ -162,12 +165,7 @@ struct SettingsView: View {
                 .toggleStyle(.switch)
                 .onChange(of: alwaysRefresh) { _, val in
                     settings.alwaysRefresh = val
-                    if val {
-                        apiService.startAutoRefresh(interval: settings.refreshInterval)
-                    } else {
-                        apiService.stopAutoRefresh()
-                        ProcessMonitor.shared.refresh()
-                    }
+                    apiService.settingsDidChange(forceFetch: true)
                 }
             }
 
@@ -201,6 +199,8 @@ struct SettingsView: View {
             set: { selected in
                 if selected { monitoredApps.insert(bundleID) }
                 else { monitoredApps.remove(bundleID) }
+                settings.monitoredAppIDs = monitoredApps
+                apiService.settingsDidChange(forceFetch: true)
             }
         )
     }
@@ -251,6 +251,7 @@ struct SettingsView: View {
                         Spacer()
                         Button {
                             customApps.removeAll { $0.bundleID == app.bundleID }
+                            persistCustomApps(forceFetch: true)
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundStyle(.secondary)
@@ -273,8 +274,23 @@ struct SettingsView: View {
             : newAppName.trimmingCharacters(in: .whitespaces)
         guard !id.isEmpty, !customApps.contains(where: { $0.bundleID == id }) else { return }
         customApps.append((id, name))
+        persistCustomApps(forceFetch: true)
         newBundleID = ""
         newAppName = ""
+    }
+
+    private func persistCustomApps(forceFetch: Bool) {
+        settings.customApps = customApps
+        apiService.settingsDidChange(forceFetch: forceFetch)
+    }
+
+    private func persistAPIKey(forceFetch: Bool) {
+        let trimmed = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newValue = trimmed.isEmpty ? nil : trimmed
+        let currentValue = settings.apiKey
+        guard currentValue != newValue else { return }
+        settings.apiKey = newValue
+        apiService.settingsDidChange(forceFetch: forceFetch)
     }
 
     // MARK: - 通用设置
@@ -311,13 +327,6 @@ struct SettingsView: View {
         HStack {
             Spacer()
             Button("关闭") {
-                if !apiKeyInput.trimmingCharacters(in: .whitespaces).isEmpty {
-                    settings.apiKey = apiKeyInput
-                }
-                settings.monitoredAppIDs = monitoredApps
-                settings.customApps = customApps
-                ProcessMonitor.shared.refresh()
-                ZenmuxAPIService.shared.startAutoRefresh(interval: settings.refreshInterval)
                 NSApp.keyWindow?.close()
             }
             .buttonStyle(.borderedProminent)

@@ -3,13 +3,15 @@
 //  zenmux-monitor
 //
 //  应用设置管理器
-//  UserDefaults 持久化所有配置
+//  所有配置均使用 UserDefaults 持久化
 //
 
 import Foundation
 
 final class SettingsManager {
     static let shared = SettingsManager()
+
+    private let defaults = UserDefaults.standard
 
     private enum Keys {
         static let apiKey = "api_key"
@@ -20,7 +22,7 @@ final class SettingsManager {
     }
 
     private init() {
-        UserDefaults.standard.register(defaults: [
+        defaults.register(defaults: [
             Keys.refreshInterval: 60.0,
             Keys.monitoredAppIDs: [
                 "com.microsoft.VSCode",
@@ -33,36 +35,36 @@ final class SettingsManager {
     // MARK: - API Key
 
     var apiKey: String? {
-        get { UserDefaults.standard.string(forKey: Keys.apiKey) }
-        set { UserDefaults.standard.set(newValue, forKey: Keys.apiKey) }
+        get { defaults.string(forKey: Keys.apiKey) }
+        set { defaults.set(newValue, forKey: Keys.apiKey) }
     }
 
     // MARK: - UserDefaults 操作
 
     var refreshInterval: TimeInterval {
-        get { UserDefaults.standard.double(forKey: Keys.refreshInterval) }
-        set { UserDefaults.standard.set(newValue, forKey: Keys.refreshInterval) }
+        get { defaults.double(forKey: Keys.refreshInterval) }
+        set { defaults.set(newValue, forKey: Keys.refreshInterval) }
     }
 
     var launchAtLogin: Bool {
-        get { UserDefaults.standard.bool(forKey: Keys.launchAtLogin) }
-        set { UserDefaults.standard.set(newValue, forKey: Keys.launchAtLogin) }
+        get { defaults.bool(forKey: Keys.launchAtLogin) }
+        set { defaults.set(newValue, forKey: Keys.launchAtLogin) }
     }
 
     /// 用户选中的监控 App Bundle ID 集合
     var monitoredAppIDs: Set<String> {
         get {
-            Set(UserDefaults.standard.stringArray(forKey: Keys.monitoredAppIDs) ?? [])
+            Set(defaults.stringArray(forKey: Keys.monitoredAppIDs) ?? [])
         }
         set {
-            UserDefaults.standard.set(Array(newValue), forKey: Keys.monitoredAppIDs)
+            defaults.set(Array(newValue), forKey: Keys.monitoredAppIDs)
         }
     }
 
     /// 白名单之外的额外 App（bundleID + 显示名）
     var customApps: [(bundleID: String, name: String)] {
         get {
-            guard let data = UserDefaults.standard.data(forKey: "custom_apps"),
+            guard let data = defaults.data(forKey: "custom_apps"),
                   let arr = try? JSONDecoder().decode([[String]].self, from: data) else {
                 return []
             }
@@ -73,15 +75,21 @@ final class SettingsManager {
         set {
             let arr = newValue.map { [$0.bundleID, $0.name] }
             if let data = try? JSONEncoder().encode(arr) {
-                UserDefaults.standard.set(data, forKey: "custom_apps")
+                defaults.set(data, forKey: "custom_apps")
             }
         }
     }
 
     /// 始终刷新（忽略 App 检测）
     var alwaysRefresh: Bool {
-        get { UserDefaults.standard.bool(forKey: Keys.alwaysRefresh) }
-        set { UserDefaults.standard.set(newValue, forKey: Keys.alwaysRefresh) }
+        get { defaults.bool(forKey: Keys.alwaysRefresh) }
+        set { defaults.set(newValue, forKey: Keys.alwaysRefresh) }
+    }
+
+    /// 菜单栏百分比文字颜色：true = 黑色，false = 白色（默认）
+    var useBlackText: Bool {
+        get { defaults.bool(forKey: "use_black_text") }
+        set { defaults.set(newValue, forKey: "use_black_text") }
     }
 
     /// 所有可供选择的监控 App（不可变列表）

@@ -43,20 +43,62 @@ final class ZenmuxAPIService {
 
     private let baseURL = "https://zenmux.ai/api/v1/management/subscription/detail"
 
-    var subscriptionData: ZenmuxSubscriptionData?
-    var lastError: String?
-    var lastUpdated: Date?
-    var isPaused = false
+    var subscriptionData: ZenmuxSubscriptionData? {
+        didSet { notifyStateChange() }
+    }
+    var lastError: String? {
+        didSet { notifyStateChange() }
+    }
+    var lastUpdated: Date? {
+        didSet { notifyStateChange() }
+    }
+    var isPaused = false {
+        didSet { notifyStateChange() }
+    }
 
-    private var refreshTask: Task<Void, Never>?
+    @ObservationIgnored private var refreshTask: Task<Void, Never>?
+    @ObservationIgnored private var activeRefreshInterval: TimeInterval?
+    @ObservationIgnored private var isManuallyPaused = false
+    @ObservationIgnored var onStateChange: (@MainActor () -> Void)?
 
     // MARK: - 公开方法
+
+    /// 按当前设置与监控状态重算刷新策略
+    func refreshPolicyDidChange(forceFetch: Bool = false) {
+        reconcileRefreshState(forceFetch: forceFetch)
+    }
+
+    /// 设置变更后重新加载监控状态并应用刷新策略
+    func settingsDidChange(forceFetch: Bool = true) {
+        ProcessMonitor.shared.refresh()
+        reconcileRefreshState(forceFetch: forceFetch)
+    }
+
+    /// 手动暂停自动刷新
+    func pauseAutoRefresh() {
+        isManuallyPaused = true
+        stopRefreshLoop(markPaused: true)
+    }
+
+    /// 手动恢复自动刷新
+    func resumeAutoRefresh(forceFetch: Bool = true) {
+        isManuallyPaused = false
+        reconcileRefreshState(forceFetch: forceFetch)
+    }
+
+    /// 手动立即刷新一次，但不改变当前暂停状态
+    func refreshNow() async {
+        let shouldStayPaused = isManuallyPaused || !shouldAutoRefresh
+        await fetchSubscription(force: true)
+        if shouldStayPaused {
+            isPaused = true
+        }
+    }
 
     /// 获取订阅详情
     func fetchSubscription(force: Bool = false) async {
         guard let apiKey = SettingsManager.shared.apiKey, !apiKey.isEmpty else {
-            lastError = ZenmuxAPIErrorType.noAPIKey.localizedDescription
-            subscriptionData = nil
+            clearForMissingAPIKey()
             return
         }
 
@@ -102,22 +144,81 @@ final class ZenmuxAPIService {
         }
     }
 
-    /// 启动定时刷新
+    /// 兼容旧调用：恢复自动刷新
     func startAutoRefresh(interval: TimeInterval = 60) {
+        activeRefreshInterval = interval
+        isManuallyPaused = false
+        startRefreshLoop(interval: interval, immediateFetch: true)
+    }
+
+    /// 兼容旧调用：暂停自动刷新
+    func stopAutoRefresh() {
+        pauseAutoRefresh()
+    }
+
+    private var shouldAutoRefresh: Bool {
+        SettingsManager.shared.alwaysRefresh || ProcessMonitor.shared.isAnyMonitoredAppRunning
+    }
+
+    private func reconcileRefreshState(forceFetch: Bool) {
+        guard let apiKey = SettingsManager.shared.apiKey, !apiKey.isEmpty else {
+            clearForMissingAPIKey()
+            stopRefreshLoop(markPaused: false)
+            return
+        }
+
+        guard !isManuallyPaused else {
+            stopRefreshLoop(markPaused: true)
+            return
+        }
+
+        guard shouldAutoRefresh else {
+            stopRefreshLoop(markPaused: true)
+            return
+        }
+
+        let interval = SettingsManager.shared.refreshInterval
+        startRefreshLoop(interval: interval, immediateFetch: forceFetch || subscriptionData == nil)
+    }
+
+    private func startRefreshLoop(interval: TimeInterval, immediateFetch: Bool) {
+        let shouldRestartTask = refreshTask == nil || activeRefreshInterval != interval
+
+        if shouldRestartTask {
+            stopRefreshLoop(markPaused: false)
+            activeRefreshInterval = interval
+            refreshTask = Task { [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                    if Task.isCancelled { break }
+                    await self?.fetchSubscription()
+                }
+            }
+        }
+
         isPaused = false
-        stopAutoRefresh()
-        refreshTask = Task {
-            while !Task.isCancelled {
-                await fetchSubscription()
-                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+
+        if immediateFetch {
+            Task { [weak self] in
+                await self?.fetchSubscription(force: true)
             }
         }
     }
 
-    /// 停止定时刷新
-    func stopAutoRefresh() {
+    private func stopRefreshLoop(markPaused: Bool) {
         refreshTask?.cancel()
         refreshTask = nil
-        isPaused = true
+        activeRefreshInterval = nil
+        isPaused = markPaused
+    }
+
+    private func clearForMissingAPIKey() {
+        lastError = ZenmuxAPIErrorType.noAPIKey.localizedDescription
+        lastUpdated = nil
+        subscriptionData = nil
+    }
+
+    private func notifyStateChange() {
+        onStateChange?()
     }
 }
