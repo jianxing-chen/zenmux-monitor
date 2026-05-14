@@ -133,7 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             let quotaItem = NSMenuItem()
             let quotaView = MenuQuotaView(data: data)
             let quotaHosting = NSHostingView(rootView: quotaView.frame(width: 260))
-            quotaHosting.frame = NSRect(x: 0, y: 0, width: 260, height: 165)
+            quotaHosting.frame = NSRect(x: 0, y: 0, width: 260, height: 185)
             quotaItem.view = quotaHosting
             menu.addItem(quotaItem)
         } else {
@@ -410,9 +410,9 @@ final class StatusBarView: NSView {
             barBackground: NSColor(calibratedWhite: 0.72, alpha: 1.0),
             pausedBackground: NSColor(calibratedWhite: 0.82, alpha: 1.0),
             pausedFill: NSColor(calibratedWhite: 0.55, alpha: 1.0),
-            lowUsage: NSColor.systemBlue.withAlphaComponent(0.75),
-            midUsage: NSColor.systemOrange.withAlphaComponent(0.75),
-            highUsage: NSColor.systemRed.withAlphaComponent(0.75),
+            lowUsage: NSColor.systemBlue.withAlphaComponent(0.65),
+            midUsage: NSColor.systemOrange.withAlphaComponent(0.65),
+            highUsage: NSColor.systemRed.withAlphaComponent(0.65),
             primaryText: textColor,
             secondaryText: secondaryColor
         )
@@ -547,20 +547,20 @@ struct MenuQuotaView: View {
             // 月度上限
             HStack {
                 Image(systemName: "chart.bar.fill")
-                    .font(.caption2).foregroundStyle(.purple)
+                    .font(.caption).foregroundStyle(.purple)
                 Text("当月上限")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Text("\(formatNum(data.quota_monthly.max_flows)) flows")
                     .font(.caption).fontWeight(.medium)
                 Text("($\(formatNum(data.quota_monthly.max_value_usd)))")
-                    .font(.caption2).foregroundStyle(.tertiary)
+                    .font(.caption).foregroundStyle(.tertiary)
             }
 
             // 汇率信息
             HStack {
                 Image(systemName: "dollarsign.circle")
-                    .font(.caption2).foregroundStyle(.green)
+                    .font(.caption).foregroundStyle(.green)
                 Text("汇率")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
@@ -572,9 +572,9 @@ struct MenuQuotaView: View {
                 let api = ZenmuxAPIService.shared
                 HStack(spacing: 6) {
                     Image(systemName: "clock.arrow.trianglehead.counterclockwise.rotate.90")
-                        .font(.caption2).foregroundStyle(.secondary)
+                        .font(.caption).foregroundStyle(.secondary)
                     Text("更新于 \(relativeTime(updated))")
-                        .font(.caption2).foregroundStyle(.tertiary)
+                        .font(.caption).foregroundStyle(.tertiary)
                     Spacer()
                     Button {
                         if api.isPaused {
@@ -632,38 +632,38 @@ struct QuotaRow: View {
     let resetsAt: String?
 
     var body: some View {
-        VStack(spacing: 2) {
+        VStack(spacing: 3) {
             HStack {
-                Image(systemName: icon).font(.caption).foregroundStyle(.blue)
-                Text(label).font(.caption).foregroundStyle(.secondary)
+                Image(systemName: icon).font(.subheadline).foregroundStyle(.blue)
+                Text(label).font(.subheadline).foregroundStyle(.secondary)
                 Spacer()
                 Text(String(format: "%.2f%%", pct * 100))
-                    .font(.caption).fontWeight(.medium).monospacedDigit()
+                    .font(.subheadline).fontWeight(.medium).monospacedDigit()
                     .foregroundStyle(pct > 0.8 ? .red : pct > 0.5 ? .orange : .primary)
             }
 
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 2).fill(.primary.opacity(0.1)).frame(height: 4)
+                    RoundedRectangle(cornerRadius: 2).fill(.primary.opacity(0.1)).frame(height: 5)
                     RoundedRectangle(cornerRadius: 2)
                         .fill(pct > 0.8 ? .red : pct > 0.5 ? .orange : .blue)
-                        .frame(width: max(0, geo.size.width * pct), height: 4)
+                        .frame(width: max(0, geo.size.width * pct), height: 5)
                 }
             }
-            .frame(height: 4)
+            .frame(height: 5)
 
             HStack {
                 Text("已用 \(String(format: "%.2f", used))/\(String(format: "%.2f", maxFlows)) flows")
-                    .font(.caption2).foregroundStyle(.secondary)
+                    .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Text("$\(String(format: "%.2f", usedUSD)) / $\(String(format: "%.2f", maxUSD))")
-                    .font(.caption2).foregroundStyle(.tertiary)
+                    .font(.caption).foregroundStyle(.tertiary)
             }
 
             if let reset = resetsAt {
                 HStack {
                     Text("重置 \(formatReset(reset))")
-                        .font(.caption2).foregroundStyle(.secondary)
+                        .font(.caption).foregroundStyle(.secondary)
                     Spacer()
                 }
             }
