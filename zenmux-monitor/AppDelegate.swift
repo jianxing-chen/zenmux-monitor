@@ -17,14 +17,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var isMenuOpen = false
     private var processObservers: [NSObjectProtocol] = []
     private let apiService = ZenmuxAPIService.shared
-    private let settings = SettingsManager.shared
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         setupStatusItem()
         observeProcessMonitor()
         observeAPIService()
-        // 有 API Key 就直接开始刷新，不等进程检测
+        // 有 API Key 就启动刷新
         if SettingsManager.shared.apiKey?.isEmpty == false {
             apiService.startAutoRefresh(interval: SettingsManager.shared.refreshInterval)
         }
@@ -37,7 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
         let o1 = center.addObserver(forName: .monitoredAppDidLaunch, object: nil, queue: .main) {
             [weak self] _ in
-            self?.apiService.startAutoRefresh(interval: self?.settings.refreshInterval ?? 60)
+            self?.apiService.startAutoRefresh(interval: SettingsManager.shared.refreshInterval)
             Task { await self?.apiService.fetchSubscription(force: true) }
         }
 
@@ -101,7 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             let quotaItem = NSMenuItem()
             let quotaView = MenuQuotaView(data: data)
             let quotaHosting = NSHostingView(rootView: quotaView.frame(width: 260))
-            quotaHosting.frame = NSRect(x: 0, y: 0, width: 260, height: 145)
+            quotaHosting.frame = NSRect(x: 0, y: 0, width: 260, height: 165)
             quotaItem.view = quotaHosting
             menu.addItem(quotaItem)
         } else {
@@ -380,6 +379,7 @@ struct MenuHeaderView: View {
 
 struct MenuQuotaView: View {
     let data: ZenmuxSubscriptionData
+    @State private var spinning = false
 
     var body: some View {
         VStack(spacing: 4) {
@@ -389,7 +389,8 @@ struct MenuQuotaView: View {
                 used: data.quota_5_hour.used_flows,
                 maxFlows: data.quota_5_hour.max_flows,
                 usedUSD: data.quota_5_hour.used_value_usd,
-                maxUSD: data.quota_5_hour.max_value_usd
+                maxUSD: data.quota_5_hour.max_value_usd,
+                resetsAt: data.quota_5_hour.resets_at
             )
             QuotaRow(
                 label: "7 天用量", icon: "calendar",
@@ -397,7 +398,8 @@ struct MenuQuotaView: View {
                 used: data.quota_7_day.used_flows,
                 maxFlows: data.quota_7_day.max_flows,
                 usedUSD: data.quota_7_day.used_value_usd,
-                maxUSD: data.quota_7_day.max_value_usd
+                maxUSD: data.quota_7_day.max_value_usd,
+                resetsAt: data.quota_7_day.resets_at
             )
 
             Divider()
@@ -449,10 +451,16 @@ struct MenuQuotaView: View {
                     .foregroundStyle(api.isPaused ? .green : .orange)
                     .frame(width: 20, height: 20)
                     Button {
-                        Task { await api.fetchSubscription(force: true) }
+                        spinning = true
+                        Task {
+                            await api.fetchSubscription(force: true)
+                            spinning = false
+                        }
                     } label: {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 14))
+                            .rotationEffect(.degrees(spinning ? 360 : 0))
+                            .animation(spinning ? .linear(duration: 0.6).repeatForever(autoreverses: false) : .default, value: spinning)
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.blue)
@@ -482,10 +490,10 @@ struct QuotaRow: View {
     let label: String; let icon: String
     let pct: Double; let used: Double; let maxFlows: Double
     let usedUSD: Double; let maxUSD: Double
+    let resetsAt: String?
 
     var body: some View {
         VStack(spacing: 2) {
-            // 标题 + 百分比
             HStack {
                 Image(systemName: icon).font(.caption).foregroundStyle(.blue)
                 Text(label).font(.caption).foregroundStyle(.secondary)
@@ -495,7 +503,6 @@ struct QuotaRow: View {
                     .foregroundStyle(pct > 0.8 ? .red : pct > 0.5 ? .orange : .primary)
             }
 
-            // 进度条
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 2).fill(.primary.opacity(0.1)).frame(height: 4)
@@ -506,7 +513,6 @@ struct QuotaRow: View {
             }
             .frame(height: 4)
 
-            // 用量数值（精确到 1 位小数）
             HStack {
                 Text("已用 \(String(format: "%.2f", used))/\(String(format: "%.2f", maxFlows)) flows")
                     .font(.caption2).foregroundStyle(.secondary)
@@ -514,6 +520,28 @@ struct QuotaRow: View {
                 Text("$\(String(format: "%.2f", usedUSD)) / $\(String(format: "%.2f", maxUSD))")
                     .font(.caption2).foregroundStyle(.tertiary)
             }
+
+            if let reset = resetsAt {
+                HStack {
+                    Text("重置 \(formatReset(reset))")
+                        .font(.caption2).foregroundStyle(.secondary)
+                    Spacer()
+                }
+            }
         }
+    }
+
+    private static let resetFmt: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "MM/dd HH:mm"; return f
+    }()
+    private static let resetIso: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f
+    }()
+
+    private func formatReset(_ iso: String) -> String {
+        guard let date = Self.resetIso.date(from: iso) else {
+            return String(iso.prefix(16))
+        }
+        return Self.resetFmt.string(from: date)
     }
 }

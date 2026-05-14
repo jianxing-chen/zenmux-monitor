@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import ServiceManagement
 
 struct SettingsView: View {
     @State private var apiKeyInput: String = ""
@@ -291,6 +292,15 @@ struct SettingsView: View {
             .toggleStyle(.switch)
             .onChange(of: launchAtLogin) { _, newValue in
                 settings.launchAtLogin = newValue
+                do {
+                    if newValue {
+                        try SMAppService.mainApp.register()
+                    } else {
+                        try SMAppService.mainApp.unregister()
+                    }
+                } catch {
+                    print("自启动设置失败: \(error)")
+                }
             }
         }
     }
@@ -307,10 +317,7 @@ struct SettingsView: View {
                 settings.monitoredAppIDs = monitoredApps
                 settings.customApps = customApps
                 ProcessMonitor.shared.refresh()
-                // 先启动刷新再关窗（确保 API Key 已写入）
-                let svc = ZenmuxAPIService.shared
-                svc.startAutoRefresh(interval: settings.refreshInterval)
-                Task { await svc.fetchSubscription(force: true) }
+                ZenmuxAPIService.shared.startAutoRefresh(interval: settings.refreshInterval)
                 NSApp.keyWindow?.close()
             }
             .buttonStyle(.borderedProminent)

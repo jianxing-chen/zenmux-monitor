@@ -55,7 +55,7 @@ final class ZenmuxAPIService {
     /// 获取订阅详情
     func fetchSubscription(force: Bool = false) async {
         guard let apiKey = SettingsManager.shared.apiKey, !apiKey.isEmpty else {
-            lastError = "未设置 API Key"
+            lastError = ZenmuxAPIErrorType.noAPIKey.localizedDescription
             subscriptionData = nil
             return
         }
