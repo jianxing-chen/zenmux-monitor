@@ -671,7 +671,7 @@ struct QuotaRow: View {
     }
 
     private static let resetFmt: DateFormatter = {
-        let f = DateFormatter(); f.dateFormat = "MM/dd HH:mm"; return f
+        let f = DateFormatter(); f.dateFormat = "EEE MM/dd HH:mm"; return f
     }()
     private static let resetIso: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f
