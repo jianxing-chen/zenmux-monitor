@@ -54,9 +54,6 @@ struct SettingsView: View {
             bottomBar
         }
         .frame(width: 420, height: 560)
-        .onDisappear {
-            persistAPIKey(forceFetch: true)
-        }
     }
 
     // MARK: - 标题栏
@@ -327,6 +324,7 @@ struct SettingsView: View {
         HStack {
             Spacer()
             Button("关闭") {
+                persistAPIKey(forceFetch: true)
                 NSApp.keyWindow?.close()
             }
             .buttonStyle(.borderedProminent)

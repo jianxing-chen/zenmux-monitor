@@ -13,11 +13,10 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem!
     private var settingsWindow: NSWindow?
-    private var isMenuOpen = false
     private var processObservers: [NSObjectProtocol] = []
     private var appearanceObservers: [NSObjectProtocol] = []
     private let apiService = ZenmuxAPIService.shared
-    private let statusView = StatusBarView(frame: NSRect(x: 0, y: 0, width: 45, height: 22))
+    private let statusView = StatusBarView(frame: NSRect(x: 0, y: 0, width: 42, height: 22))
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -203,13 +202,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     // MARK: - NSMenuDelegate（懒加载菜单）
 
     func menuWillOpen(_ menu: NSMenu) {
-        isMenuOpen = true
         if !menu.items.isEmpty { menu.removeAllItems() }
         buildMenuItems(into: menu)
     }
 
     func menuDidClose(_ menu: NSMenu) {
-        isMenuOpen = false
         // 关闭后释放菜单内的 NSHostingView（SwiftUI 占 ~10MB）
         menu.removeAllItems()
     }

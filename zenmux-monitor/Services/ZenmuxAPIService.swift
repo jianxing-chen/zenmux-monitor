@@ -89,9 +89,13 @@ final class ZenmuxAPIService {
     /// 手动立即刷新一次，但不改变当前暂停状态
     func refreshNow() async {
         let shouldStayPaused = isManuallyPaused || !shouldAutoRefresh
-        await fetchSubscription(force: true)
         if shouldStayPaused {
+            // 临时解除暂停以允许 fetch，完成后恢复
+            isPaused = false
+            await fetchSubscription(force: true)
             isPaused = true
+        } else {
+            await fetchSubscription(force: true)
         }
     }
 
