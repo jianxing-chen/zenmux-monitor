@@ -239,7 +239,7 @@ final class StatusBarView: NSView {
     }
 
     override var intrinsicContentSize: NSSize {
-        NSSize(width: 42, height: 22)
+        NSSize(width: 47, height: 22)
     }
 
     func renderedImage() -> NSImage {
@@ -271,8 +271,8 @@ final class StatusBarView: NSView {
         let palette = currentPalette
         let layout = normalLayoutMetrics
 
-        let barH: CGFloat = 7
-        let spacing: CGFloat = 2
+        let barH: CGFloat = 5
+        let spacing: CGFloat = 4
         let topY = bounds.height - barH - 4
         let bottomY = topY - barH - spacing
         let corner: CGFloat = 2
@@ -395,9 +395,9 @@ final class StatusBarView: NSView {
 
         if isDarkMode {
             return Palette(
-                barBackground: NSColor.white.withAlphaComponent(0.15),
-                pausedBackground: NSColor.white.withAlphaComponent(0.08),
-                pausedFill: NSColor.white.withAlphaComponent(0.25),
+                barBackground: NSColor(calibratedWhite: 0.32, alpha: 1.0),
+                pausedBackground: NSColor(calibratedWhite: 0.22, alpha: 1.0),
+                pausedFill: NSColor(calibratedWhite: 0.45, alpha: 1.0),
                 lowUsage: .systemBlue,
                 midUsage: .systemOrange,
                 highUsage: .systemRed,
@@ -407,32 +407,32 @@ final class StatusBarView: NSView {
         }
 
         return Palette(
-            barBackground: NSColor.black.withAlphaComponent(0.10),
-            pausedBackground: NSColor.black.withAlphaComponent(0.05),
-            pausedFill: NSColor.black.withAlphaComponent(0.15),
-            lowUsage: .systemBlue,
-            midUsage: .systemOrange,
-            highUsage: .systemRed,
+            barBackground: NSColor(calibratedWhite: 0.72, alpha: 1.0),
+            pausedBackground: NSColor(calibratedWhite: 0.82, alpha: 1.0),
+            pausedFill: NSColor(calibratedWhite: 0.55, alpha: 1.0),
+            lowUsage: NSColor.systemBlue.withAlphaComponent(0.75),
+            midUsage: NSColor.systemOrange.withAlphaComponent(0.75),
+            highUsage: NSColor.systemRed.withAlphaComponent(0.75),
             primaryText: textColor,
             secondaryText: secondaryColor
         )
     }
 
     private var normalLayoutMetrics: (barX: CGFloat, barWidth: CGFloat, textX: CGFloat) {
-        let leadingInset: CGFloat = 1
+        let leadingInset: CGFloat = 0
         let trailingInset: CGFloat = 0
-        let gap: CGFloat = 2
-        let textWidth = ceil(("100%" as NSString).size(withAttributes: [.font: Self.percentFont]).width)
+        let gap: CGFloat = 5
+        let textWidth: CGFloat = 15
         let textX = bounds.width - trailingInset - textWidth
         let barWidth = max(14, textX - gap - leadingInset)
         return (leadingInset, barWidth, textX)
     }
 
     private var pausedLayoutMetrics: (barX: CGFloat, barWidth: CGFloat, textX: CGFloat) {
-        let leadingInset: CGFloat = 1
+        let leadingInset: CGFloat = 0
         let trailingInset: CGFloat = 0
-        let gap: CGFloat = 2
-        let textWidth = ceil(("⏸" as NSString).size(withAttributes: [.font: Self.pausedFont]).width)
+        let gap: CGFloat = 5
+        let textWidth: CGFloat = 7
         let textX = bounds.width - trailingInset - textWidth
         let barWidth = max(18, textX - gap - leadingInset)
         return (leadingInset, barWidth, textX)
