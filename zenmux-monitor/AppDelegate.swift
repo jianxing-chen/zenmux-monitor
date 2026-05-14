@@ -16,7 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var processObservers: [NSObjectProtocol] = []
     private var appearanceObservers: [NSObjectProtocol] = []
     private let apiService = ZenmuxAPIService.shared
-    private let statusView = StatusBarView(frame: NSRect(x: 0, y: 0, width: 42, height: 22))
+    private let statusView = StatusBarView(frame: NSRect(x: 0, y: 0, width: 47, height: 22))
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
