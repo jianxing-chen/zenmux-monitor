@@ -380,13 +380,9 @@ final class StatusBarView: NSView {
         else if pct > 0.5 { color = palette.midUsage }
         else { color = palette.lowUsage }
 
-        if fw < radius * 2 {
-            color.setFill()
-            NSBezierPath(rect: fgRect).fill()
-        } else {
-            color.setFill()
-            NSBezierPath(roundedRect: fgRect, xRadius: radius, yRadius: radius).fill()
-        }
+        let effectiveRadius = min(radius, fw / 2)
+        color.setFill()
+        NSBezierPath(roundedRect: fgRect, xRadius: effectiveRadius, yRadius: effectiveRadius).fill()
     }
 
     private var currentPalette: Palette {
