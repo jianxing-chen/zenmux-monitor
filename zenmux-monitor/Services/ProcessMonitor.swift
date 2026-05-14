@@ -19,6 +19,7 @@ final class ProcessMonitor {
     /// GUI App Bundle ID 列表
     private var monitoredBundleIDs: Set<String> = []
     private var runningMonitoredApps = Set<String>()
+    private var workspaceObservers: [NSObjectProtocol] = []
 
     private(set) var isAnyMonitoredAppRunning = false {
         didSet {
@@ -52,15 +53,26 @@ final class ProcessMonitor {
     private func observeAppLifecycle() {
         let nCenter = NSWorkspace.shared.notificationCenter
 
-        nCenter.addObserver(forName: NSWorkspace.didLaunchApplicationNotification,
-                            object: nil, queue: .main) { [weak self] notif in
+        let launchObserver = nCenter.addObserver(forName: NSWorkspace.didLaunchApplicationNotification,
+                                                 object: nil, queue: .main) { [weak self] notif in
             self?.handleAppLaunch(notif)
         }
 
-        nCenter.addObserver(forName: NSWorkspace.didTerminateApplicationNotification,
-                            object: nil, queue: .main) { [weak self] notif in
+        let terminateObserver = nCenter.addObserver(forName: NSWorkspace.didTerminateApplicationNotification,
+                                                    object: nil, queue: .main) { [weak self] notif in
             self?.handleAppTerminate(notif)
         }
+
+        workspaceObservers = [launchObserver, terminateObserver]
+    }
+
+    func cleanup() {
+        let center = NSWorkspace.shared.notificationCenter
+        workspaceObservers.forEach { center.removeObserver($0) }
+        workspaceObservers.removeAll()
+        runningMonitoredApps.removeAll()
+        monitoredBundleIDs.removeAll()
+        isAnyMonitoredAppRunning = false
     }
 
     private func handleAppLaunch(_ notif: Notification) {

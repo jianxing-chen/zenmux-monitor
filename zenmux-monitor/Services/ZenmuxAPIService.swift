@@ -42,6 +42,7 @@ final class ZenmuxAPIService {
     static let shared = ZenmuxAPIService()
 
     private let baseURL = "https://zenmux.ai/api/v1/management/subscription/detail"
+    private static let cacheMaxAge: TimeInterval = 4 * 60 * 60
 
     var subscriptionData: ZenmuxSubscriptionData? {
         didSet { notifyStateChange() }
@@ -55,17 +56,42 @@ final class ZenmuxAPIService {
     var isPaused = false {
         didSet { notifyStateChange() }
     }
+    var isRefreshing = false {
+        didSet { notifyStateChange() }
+    }
 
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var activeRefreshInterval: TimeInterval?
     @ObservationIgnored private var isManuallyPaused = false
     @ObservationIgnored var onStateChange: (@MainActor () -> Void)?
 
+    private init() {
+        restoreCachedSnapshotIfAvailable()
+    }
+
     // MARK: - 公开方法
 
     /// 按当前设置与监控状态重算刷新策略
     func refreshPolicyDidChange(forceFetch: Bool = false) {
         reconcileRefreshState(forceFetch: forceFetch)
+    }
+
+    /// 应用启动时初始化状态；若当前不满足常驻刷新条件，也补做一次首刷。
+    func handleAppLaunch() {
+        guard let apiKey = SettingsManager.shared.apiKey, !apiKey.isEmpty else {
+            clearForMissingAPIKey()
+            stopRefreshLoop(markPaused: false)
+            return
+        }
+
+        let shouldFetchImmediately = shouldAutoRefresh
+        reconcileRefreshState(forceFetch: shouldFetchImmediately)
+
+        guard !shouldFetchImmediately else { return }
+
+        Task { [weak self] in
+            await self?.refreshNow()
+        }
     }
 
     /// 设置变更后重新加载监控状态并应用刷新策略
@@ -108,9 +134,15 @@ final class ZenmuxAPIService {
 
         // 手动刷新绕过暂停检查
         if !force, isPaused { return }
+        if isRefreshing { return }
 
         isPaused = false
+        isRefreshing = true
         lastError = nil
+
+        defer {
+            isRefreshing = false
+        }
 
         do {
             guard let url = URL(string: baseURL) else {
@@ -137,11 +169,17 @@ final class ZenmuxAPIService {
 
             if result.success, let subData = result.data {
                 subscriptionData = subData
-                lastUpdated = Date()
+                let refreshedAt = Date()
+                lastUpdated = refreshedAt
+                SettingsManager.shared.cachedSubscriptionData = subData
+                SettingsManager.shared.cachedLastUpdated = refreshedAt
             } else {
                 throw ZenmuxAPIErrorType.apiError(result.error?.message ?? "未知错误")
             }
         } catch let error as ZenmuxAPIErrorType {
+            if case .httpError(let code) = error, code == 401 || code == 403 {
+                clearCachedSnapshotState()
+            }
             lastError = error.localizedDescription
         } catch {
             lastError = ZenmuxAPIErrorType.networkError(error).localizedDescription
@@ -218,11 +256,37 @@ final class ZenmuxAPIService {
 
     private func clearForMissingAPIKey() {
         lastError = ZenmuxAPIErrorType.noAPIKey.localizedDescription
+        clearCachedSnapshotState()
+    }
+
+    func cleanup() {
+        stopRefreshLoop(markPaused: false)
+        isRefreshing = false
+    }
+
+    private func clearCachedSnapshotState() {
         lastUpdated = nil
         subscriptionData = nil
+        SettingsManager.shared.clearCachedSubscriptionSnapshot()
     }
 
     private func notifyStateChange() {
         onStateChange?()
+    }
+
+    private func restoreCachedSnapshotIfAvailable() {
+        guard let apiKey = SettingsManager.shared.apiKey, !apiKey.isEmpty else {
+            return
+        }
+
+        guard let cachedAt = SettingsManager.shared.cachedLastUpdated,
+              Date().timeIntervalSince(cachedAt) <= Self.cacheMaxAge,
+              let cachedData = SettingsManager.shared.cachedSubscriptionData else {
+            SettingsManager.shared.clearCachedSubscriptionSnapshot()
+            return
+        }
+
+        subscriptionData = cachedData
+        lastUpdated = cachedAt
     }
 }

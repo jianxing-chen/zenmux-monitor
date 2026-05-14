@@ -19,6 +19,8 @@ final class SettingsManager {
         static let launchAtLogin = "launch_at_login"
         static let monitoredAppIDs = "monitored_app_ids"
         static let alwaysRefresh = "always_refresh"
+        static let cachedSubscriptionData = "cached_subscription_data"
+        static let cachedLastUpdated = "cached_last_updated"
     }
 
     private init() {
@@ -36,7 +38,14 @@ final class SettingsManager {
 
     var apiKey: String? {
         get { defaults.string(forKey: Keys.apiKey) }
-        set { defaults.set(newValue, forKey: Keys.apiKey) }
+        set {
+            let previousValue = defaults.string(forKey: Keys.apiKey)
+            defaults.set(newValue, forKey: Keys.apiKey)
+
+            if previousValue != newValue {
+                clearCachedSubscriptionSnapshot()
+            }
+        }
     }
 
     // MARK: - UserDefaults 操作
@@ -90,6 +99,41 @@ final class SettingsManager {
     var useBlackText: Bool {
         get { defaults.bool(forKey: "use_black_text") }
         set { defaults.set(newValue, forKey: "use_black_text") }
+    }
+
+    var cachedSubscriptionData: ZenmuxSubscriptionData? {
+        get {
+            guard let data = defaults.data(forKey: Keys.cachedSubscriptionData) else {
+                return nil
+            }
+            return try? JSONDecoder().decode(ZenmuxSubscriptionData.self, from: data)
+        }
+        set {
+            guard let newValue else {
+                defaults.removeObject(forKey: Keys.cachedSubscriptionData)
+                return
+            }
+
+            if let data = try? JSONEncoder().encode(newValue) {
+                defaults.set(data, forKey: Keys.cachedSubscriptionData)
+            }
+        }
+    }
+
+    var cachedLastUpdated: Date? {
+        get { defaults.object(forKey: Keys.cachedLastUpdated) as? Date }
+        set {
+            if let newValue {
+                defaults.set(newValue, forKey: Keys.cachedLastUpdated)
+            } else {
+                defaults.removeObject(forKey: Keys.cachedLastUpdated)
+            }
+        }
+    }
+
+    func clearCachedSubscriptionSnapshot() {
+        defaults.removeObject(forKey: Keys.cachedSubscriptionData)
+        defaults.removeObject(forKey: Keys.cachedLastUpdated)
     }
 
     /// 所有可供选择的监控 App（不可变列表）

@@ -25,10 +25,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         observeProcessMonitor()
         observeAPIService()
         observeAppearanceChanges()
-        apiService.refreshPolicyDidChange(forceFetch: true)
+        apiService.handleAppLaunch()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        apiService.cleanup()
+        ProcessMonitor.shared.cleanup()
+
         let defaultCenter = NotificationCenter.default
         processObservers.forEach { defaultCenter.removeObserver($0) }
         processObservers.removeAll()
@@ -144,6 +147,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
         menu.addItem(.separator())
 
+        let hasAPIKey = !(SettingsManager.shared.apiKey?.isEmpty ?? true)
+        let refreshItem = NSMenuItem(
+            title: apiService.isRefreshing ? "正在刷新..." : "立即刷新",
+            action: #selector(refreshData),
+            keyEquivalent: "r"
+        )
+        refreshItem.target = self
+        refreshItem.isEnabled = hasAPIKey && !apiService.isRefreshing
+        menu.addItem(refreshItem)
+
         // --- 文字颜色切换 ---
         let isBlack = SettingsManager.shared.useBlackText
         let colorItem = NSMenuItem(
@@ -156,7 +169,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
         menu.addItem(.separator())
 
-        // --- 操作按钮（设置 / 退出仍用 NSMenuItem；刷新已移入 SwiftUI 视图内）---
+        // --- 操作按钮 ---
         let settingsItem = NSMenuItem(title: "设置", action: #selector(openSettings), keyEquivalent: "")
         settingsItem.target = self
         menu.addItem(settingsItem)
@@ -191,6 +204,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         apiService.stopAutoRefresh()
         statusItem = nil
         NSApplication.shared.terminate(nil)
+    }
+
+    @objc private func refreshData() {
+        Task { [weak self] in
+            await self?.apiService.refreshNow()
+        }
     }
 
     @objc private func toggleTextColor() {
@@ -339,7 +358,8 @@ final class StatusBarView: NSView {
                              attrs: [NSAttributedString.Key: Any]) {
         let size = text.size(withAttributes: attrs)
         let y = barY + (barH - size.height) / 2
-        text.draw(at: NSPoint(x: x, y: y), withAttributes: attrs)
+        let drawX = max(0, min(x, bounds.maxX - size.width - 0.5))
+        text.draw(at: NSPoint(x: drawX, y: y), withAttributes: attrs)
     }
 
     private func drawPlaceholder() {
@@ -586,10 +606,15 @@ struct MenuQuotaView: View {
                     .foregroundStyle(api.isPaused ? .green : .orange)
                     .frame(width: 20, height: 20)
                     Button {
+                        guard !spinning else { return }
                         spinning = true
                         Task {
+                            defer {
+                                Task { @MainActor in
+                                    spinning = false
+                                }
+                            }
                             await api.refreshNow()
-                            spinning = false
                         }
                     } label: {
                         Image(systemName: "arrow.clockwise")
@@ -598,6 +623,7 @@ struct MenuQuotaView: View {
                             .animation(spinning ? .linear(duration: 0.6).repeatForever(autoreverses: false) : .default, value: spinning)
                     }
                     .buttonStyle(.plain)
+                    .disabled(spinning)
                     .foregroundStyle(.blue)
                     .frame(width: 20, height: 20)
                 }
