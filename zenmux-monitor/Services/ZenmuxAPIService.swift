@@ -186,18 +186,6 @@ final class ZenmuxAPIService {
         }
     }
 
-    /// 兼容旧调用：恢复自动刷新
-    func startAutoRefresh(interval: TimeInterval = 60) {
-        activeRefreshInterval = interval
-        isManuallyPaused = false
-        startRefreshLoop(interval: interval, immediateFetch: true)
-    }
-
-    /// 兼容旧调用：暂停自动刷新
-    func stopAutoRefresh() {
-        pauseAutoRefresh()
-    }
-
     private var shouldAutoRefresh: Bool {
         SettingsManager.shared.alwaysRefresh || ProcessMonitor.shared.isAnyMonitoredAppRunning
     }

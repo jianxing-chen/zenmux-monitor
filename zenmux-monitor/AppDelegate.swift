@@ -11,10 +11,12 @@ import AppKit
 import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
-    private var statusItem: NSStatusItem!
+    private let menuContentWidth: CGFloat = 336
+    private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
     private var processObservers: [NSObjectProtocol] = []
     private var appearanceObservers: [NSObjectProtocol] = []
+    private var isShuttingDown = false
     private let apiService = ZenmuxAPIService.shared
     private let statusView = StatusBarView(frame: NSRect(x: 0, y: 0, width: 49, height: 22))
 
@@ -29,9 +31,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        apiService.cleanup()
-        ProcessMonitor.shared.cleanup()
-
         let defaultCenter = NotificationCenter.default
         processObservers.forEach { defaultCenter.removeObserver($0) }
         processObservers.removeAll()
@@ -39,6 +38,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         let distributedCenter = DistributedNotificationCenter.default()
         appearanceObservers.forEach { distributedCenter.removeObserver($0) }
         appearanceObservers.removeAll()
+
+        performShutdownCleanup()
     }
 
     // MARK: - 进程启停监听（App 运行时刷新，退出后停刷新）
@@ -49,14 +50,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         let o1 = center.addObserver(forName: .monitoredAppDidLaunch, object: nil, queue: .main) {
             [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.apiService.refreshPolicyDidChange(forceFetch: true)
+                guard let self, !self.isShuttingDown else { return }
+                self.apiService.refreshPolicyDidChange(forceFetch: true)
             }
         }
 
         let o2 = center.addObserver(forName: .monitoredAppDidTerminate, object: nil, queue: .main) {
             [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.apiService.refreshPolicyDidChange()
+                guard let self, !self.isShuttingDown else { return }
+                self.apiService.refreshPolicyDidChange()
             }
         }
         processObservers = [o1, o2]
@@ -75,22 +78,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     // MARK: - 状态栏项
 
     private func setupStatusItem() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.length = statusView.intrinsicContentSize.width
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        item.length = statusView.intrinsicContentSize.width
 
         statusView.apiService = apiService
 
-        if let button = statusItem.button {
+        if let button = item.button {
             button.title = ""
             button.imagePosition = .imageOnly
             button.imageScaling = .scaleNone
         }
+        statusItem = item
         updateStatusItemImage()
 
-        // 懒加载菜单：仅点击时才构建 SwiftUI 视图
         let menu = NSMenu()
         menu.delegate = self
-        statusItem.menu = menu
+        statusItem?.menu = menu
     }
 
     private func observeAppearanceChanges() {
@@ -108,35 +111,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     @MainActor
     private func updateStatusItemImage() {
-        guard let button = statusItem.button else { return }
-        statusView.appearance = resolvedStatusBarAppearance
+        guard !isShuttingDown, let button = statusItem?.button else { return }
+        statusView.appearance = button.effectiveAppearance
         button.image = statusView.renderedImage()
         button.needsDisplay = true
-    }
-
-    private var resolvedStatusBarAppearance: NSAppearance {
-        NSApp.effectiveAppearance
     }
 
     // MARK: - 菜单构建（懒加载）
 
     private func buildMenuItems(into menu: NSMenu) {
-        // --- 账号概览（SwiftUI 嵌入）---
         let headerItem = NSMenuItem()
         let headerView = MenuHeaderView(apiService: apiService)
-        let hosting = NSHostingView(rootView: headerView.frame(width: 260))
-        hosting.frame = NSRect(x: 0, y: 0, width: 260, height: 44)
+        let hosting = NSHostingView(rootView: headerView.frame(width: menuContentWidth))
+        let headerSize = hosting.fittingSize
+        hosting.frame = NSRect(x: 0, y: 0, width: menuContentWidth, height: headerSize.height)
         headerItem.view = hosting
         menu.addItem(headerItem)
 
-        menu.addItem(.separator())
-
-        // --- 配额详情（SwiftUI 嵌入）---
         if let data = apiService.subscriptionData {
             let quotaItem = NSMenuItem()
             let quotaView = MenuQuotaView(data: data)
-            let quotaHosting = NSHostingView(rootView: quotaView.frame(width: 260))
-            quotaHosting.frame = NSRect(x: 0, y: 0, width: 260, height: 205)
+            let quotaHosting = NSHostingView(rootView: quotaView.frame(width: menuContentWidth))
+            let quotaSize = quotaHosting.fittingSize
+            quotaHosting.frame = NSRect(x: 0, y: 0, width: menuContentWidth, height: quotaSize.height)
             quotaItem.view = quotaHosting
             menu.addItem(quotaItem)
         } else {
@@ -147,50 +144,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
         menu.addItem(.separator())
 
-        let hasAPIKey = !(SettingsManager.shared.apiKey?.isEmpty ?? true)
-        let refreshItem = NSMenuItem(
-            title: apiService.isRefreshing ? "正在刷新..." : "立即刷新",
-            action: #selector(refreshData),
-            keyEquivalent: "r"
+        let actionItem = NSMenuItem()
+        let actionView = MenuActionRow(
+            onSettings: { [weak self] in self?.openSettings() },
+            onRefresh: { [weak self] in self?.refreshData() },
+            onQuit: { [weak self] in self?.quitApp() },
+            isRefreshing: apiService.isRefreshing,
+            hasAPIKey: !(SettingsManager.shared.apiKey?.isEmpty ?? true),
+            isShuttingDown: isShuttingDown
         )
-        refreshItem.target = self
-        refreshItem.isEnabled = hasAPIKey && !apiService.isRefreshing
-        menu.addItem(refreshItem)
-
-        // --- 文字颜色切换 ---
-        let isBlack = SettingsManager.shared.useBlackText
-        let colorItem = NSMenuItem(
-            title: isBlack ? "百分比颜色：◉ 黑色" : "百分比颜色：◉ 白色",
-            action: #selector(toggleTextColor),
-            keyEquivalent: ""
-        )
-        colorItem.target = self
-        menu.addItem(colorItem)
-
-        menu.addItem(.separator())
-
-        // --- 操作按钮 ---
-        let settingsItem = NSMenuItem(title: "设置", action: #selector(openSettings), keyEquivalent: "")
-        settingsItem.target = self
-        menu.addItem(settingsItem)
-
-        menu.addItem(.separator())
-
-        let quitItem = NSMenuItem(title: "退出 Zenmux Monitor", action: #selector(quitApp), keyEquivalent: "q")
-        quitItem.target = self
-        menu.addItem(quitItem)
+        let actionHosting = NSHostingView(rootView: actionView.frame(width: menuContentWidth))
+        let actionSize = actionHosting.fittingSize
+        actionHosting.frame = NSRect(x: 0, y: 0, width: menuContentWidth, height: actionSize.height)
+        actionItem.view = actionHosting
+        menu.addItem(actionItem)
     }
 
-    @objc private func openSettings() {
+    private func openSettings() {
+        guard !isShuttingDown else { return }
         if settingsWindow == nil {
             let win = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 420, height: 560),
-                styleMask: [.titled, .closable, .miniaturizable],
+                contentRect: NSRect(x: 0, y: 0, width: 580, height: 700),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable],
                 backing: .buffered,
                 defer: false
             )
             win.title = "Zenmux 监控设置"
             win.contentView = NSHostingView(rootView: SettingsView())
+            win.minSize = NSSize(width: 540, height: 640)
             win.center()
             win.isReleasedWhenClosed = false
             win.delegate = self
@@ -200,40 +181,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    @objc private func quitApp() {
-        apiService.stopAutoRefresh()
-        statusItem = nil
+    private func quitApp() {
+        guard !isShuttingDown else { return }
+        isShuttingDown = true
         NSApplication.shared.terminate(nil)
     }
 
-    @objc private func refreshData() {
+    private func refreshData() {
+        guard !isShuttingDown, !apiService.isRefreshing else { return }
         Task { [weak self] in
-            await self?.apiService.refreshNow()
+            guard let self, !self.isShuttingDown else { return }
+            await self.apiService.refreshNow()
         }
-    }
-
-    @objc private func toggleTextColor() {
-        let settings = SettingsManager.shared
-        settings.useBlackText.toggle()
-        updateStatusItemImage()
     }
 
     // MARK: - NSMenuDelegate（懒加载菜单）
 
     func menuWillOpen(_ menu: NSMenu) {
+        guard !isShuttingDown else { return }
         if !menu.items.isEmpty { menu.removeAllItems() }
         buildMenuItems(into: menu)
     }
 
     func menuDidClose(_ menu: NSMenu) {
-        // 关闭后释放菜单内的 NSHostingView（SwiftUI 占 ~10MB）
+        guard !isShuttingDown else { return }
         menu.removeAllItems()
     }
 
     func windowWillClose(_ notification: Notification) {
+        guard !isShuttingDown else { return }
         if let win = notification.object as? NSWindow, win == settingsWindow {
-            win.contentView = nil  // 释放 NSHostingView + SwiftUI 视图
+            win.contentView = nil
             settingsWindow = nil
+        }
+    }
+
+    private func performShutdownCleanup() {
+        isShuttingDown = true
+        apiService.onStateChange = nil
+        statusItem?.menu?.delegate = nil
+        statusItem?.menu?.removeAllItems()
+
+        if let win = settingsWindow {
+            win.orderOut(nil)
+            win.contentView = nil
+            win.delegate = nil
+            settingsWindow = nil
+        }
+
+        apiService.cleanup()
+        ProcessMonitor.shared.cleanup()
+
+        if let item = statusItem {
+            NSStatusBar.system.removeStatusItem(item)
+            statusItem = nil
         }
     }
 }
@@ -270,7 +271,7 @@ final class StatusBarView: NSView {
         cacheDisplay(in: bounds, to: rep)
         let image = NSImage(size: intrinsicContentSize)
         image.addRepresentation(rep)
-        image.isTemplate = false
+        image.isTemplate = true
         return image
     }
 
@@ -290,13 +291,12 @@ final class StatusBarView: NSView {
         let palette = currentPalette
         let layout = normalLayoutMetrics
 
-        let barH: CGFloat = 5
+        let barH: CGFloat = 4.5
         let spacing: CGFloat = 4
-        let topY = bounds.height - barH - 4
+        let topY = bounds.height - barH - 5
         let bottomY = topY - barH - spacing
-        let corner: CGFloat = 2
+        let corner: CGFloat = 2.25
 
-        // 进度条
         drawBar(x: layout.barX, y: topY, width: layout.barWidth, height: barH,
                 pct: data.quota_5_hour.usage_percentage, radius: corner, palette: palette)
         drawBar(x: layout.barX, y: bottomY, width: layout.barWidth, height: barH,
@@ -312,21 +312,18 @@ final class StatusBarView: NSView {
                 at: layout.textX, barY: bottomY, barH: barH, attrs: textAttrs)
     }
 
-    /// 暂停状态：显示缩略进度条 + ⏸ 图标
     private func drawPaused(_ data: ZenmuxSubscriptionData) {
         let palette = currentPalette
         let layout = pausedLayoutMetrics
-        let barH: CGFloat = 5
+        let barH: CGFloat = 4.5
         let topY = bounds.height - barH - 5
         let bottomY = topY - barH - 2
 
-        // 缩略进度条（灰色表示非实时）
         drawDimmedBar(x: layout.barX, y: topY, width: layout.barWidth, height: barH,
                       pct: data.quota_5_hour.usage_percentage, palette: palette)
         drawDimmedBar(x: layout.barX, y: bottomY, width: layout.barWidth, height: barH,
                       pct: data.quota_7_day.usage_percentage, palette: palette)
 
-        // ⏸ 符号
         let attrs: [NSAttributedString.Key: Any] = [
             .font: Self.pausedFont,
             .foregroundColor: palette.secondaryText
@@ -337,17 +334,20 @@ final class StatusBarView: NSView {
     private func drawDimmedBar(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat,
                                pct: Double, palette: Palette) {
         let barRect = NSRect(x: x, y: y, width: width, height: height)
-        let bg = NSBezierPath(roundedRect: barRect, xRadius: 2, yRadius: 2)
+        let bgPath = NSBezierPath(roundedRect: barRect, xRadius: 2, yRadius: 2)
         palette.pausedBackground.setFill()
-        bg.fill()
+        bgPath.fill()
 
         let clamped = max(0, min(pct, 1))
         let fw = width * CGFloat(clamped)
-        guard fw > 1 else { return }
+        guard fw > 0.5 else { return }
 
-        let fgRect = NSRect(x: x, y: y, width: fw, height: height)
+        NSGraphicsContext.saveGraphicsState()
+        bgPath.addClip()
+        let fillRect = NSRect(x: x, y: y, width: fw, height: height)
         palette.pausedFill.setFill()
-        NSBezierPath(roundedRect: fgRect, xRadius: 2, yRadius: 2).fill()
+        NSBezierPath(rect: fillRect).fill()
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     private func percentStr(_ pct: Double) -> String {
@@ -363,18 +363,17 @@ final class StatusBarView: NSView {
     }
 
     private func drawPlaceholder() {
-        if let icon = NSApp.applicationIconImage {
-            let size: CGFloat = 16
-            let x = (bounds.width - size) / 2
-            let y = (bounds.height - size) / 2
-            icon.draw(in: NSRect(x: x, y: y, width: size, height: size),
-                      from: .zero, operation: .sourceOver, fraction: 0.85)
-        }
-        // 有错误时显示红色感叹号
+        let palette = currentPalette
+        let barH: CGFloat = 4.5
+        let topY = bounds.height - barH - 5
+        let bottomY = topY - barH - 4
+        drawDimmedBar(x: 4, y: topY, width: 24, height: barH, pct: 0.45, palette: palette)
+        drawDimmedBar(x: 4, y: bottomY, width: 24, height: barH, pct: 0.7, palette: palette)
+
         if apiService?.lastError != nil {
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.boldSystemFont(ofSize: 9),
-                .foregroundColor: NSColor.systemRed
+                .foregroundColor: NSColor.black
             ]
             "!".draw(at: NSPoint(x: bounds.width - 10, y: 2), withAttributes: attrs)
         }
@@ -383,60 +382,46 @@ final class StatusBarView: NSView {
     private func drawBar(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat,
                          pct: Double, radius: CGFloat, palette: Palette) {
         let barRect = NSRect(x: x, y: y, width: width, height: height)
+        let bgPath = NSBezierPath(roundedRect: barRect, xRadius: radius, yRadius: radius)
 
-        // 背景
-        let bg = NSBezierPath(roundedRect: barRect, xRadius: radius, yRadius: radius)
+        // 1. 背景层
         palette.barBackground.setFill()
-        bg.fill()
+        bgPath.fill()
 
+        // 2. 填色层：用背景路径裁剪，填色自然继承左/右圆角
         let clamped = max(0, min(pct, 1))
         let fw = width * CGFloat(clamped)
-        guard fw > 1 else { return }
-
-        let fgRect = NSRect(x: x, y: y, width: fw, height: height)
+        guard fw > 0.5 else { return }
 
         let color: NSColor
         if pct > 0.8 { color = palette.highUsage }
         else if pct > 0.5 { color = palette.midUsage }
         else { color = palette.lowUsage }
 
-        let effectiveRadius = min(radius, fw / 2)
+        NSGraphicsContext.saveGraphicsState()
+        bgPath.addClip()
+        let fillRect = NSRect(x: x, y: y, width: fw, height: height)
         color.setFill()
-        NSBezierPath(roundedRect: fgRect, xRadius: effectiveRadius, yRadius: effectiveRadius).fill()
+        NSBezierPath(rect: fillRect).fill()
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     private var currentPalette: Palette {
-        let textColor: NSColor = SettingsManager.shared.useBlackText ? .black : .white
-        let secondaryColor: NSColor = textColor.withAlphaComponent(0.55)
-
-        if isDarkMode {
-            return Palette(
-                barBackground: NSColor(calibratedWhite: 0.32, alpha: 1.0),
-                pausedBackground: NSColor(calibratedWhite: 0.22, alpha: 1.0),
-                pausedFill: NSColor(calibratedWhite: 0.45, alpha: 1.0),
-                lowUsage: .systemBlue,
-                midUsage: .systemOrange,
-                highUsage: .systemRed,
-                primaryText: textColor,
-                secondaryText: secondaryColor
-            )
-        }
-
-        return Palette(
-            barBackground: NSColor(calibratedWhite: 0.72, alpha: 1.0),
-            pausedBackground: NSColor(calibratedWhite: 0.82, alpha: 1.0),
-            pausedFill: NSColor(calibratedWhite: 0.55, alpha: 1.0),
-            lowUsage: NSColor(calibratedRed: 0.15, green: 0.55, blue: 1.0, alpha: 1.0),
-            midUsage: NSColor.systemOrange.withAlphaComponent(0.65),
-            highUsage: NSColor.systemRed.withAlphaComponent(0.65),
-            primaryText: textColor,
-            secondaryText: secondaryColor
+        Palette(
+            barBackground: NSColor.black.withAlphaComponent(0.18),
+            pausedBackground: NSColor.black.withAlphaComponent(0.12),
+            pausedFill: NSColor.black.withAlphaComponent(0.28),
+            lowUsage: NSColor.black.withAlphaComponent(0.58),
+            midUsage: NSColor.black.withAlphaComponent(0.76),
+            highUsage: NSColor.black.withAlphaComponent(0.94),
+            primaryText: NSColor.black,
+            secondaryText: NSColor.black.withAlphaComponent(0.55)
         )
     }
 
     private var normalLayoutMetrics: (barX: CGFloat, barWidth: CGFloat, textX: CGFloat) {
-        let leadingInset: CGFloat = 0
-        let trailingInset: CGFloat = 0
+        let leadingInset: CGFloat = 4
+        let trailingInset: CGFloat = 3
         let gap: CGFloat = 5
         let textWidth: CGFloat = 21
         let textX = bounds.width - trailingInset - textWidth
@@ -445,21 +430,13 @@ final class StatusBarView: NSView {
     }
 
     private var pausedLayoutMetrics: (barX: CGFloat, barWidth: CGFloat, textX: CGFloat) {
-        let leadingInset: CGFloat = 0
-        let trailingInset: CGFloat = 0
+        let leadingInset: CGFloat = 4
+        let trailingInset: CGFloat = 4
         let gap: CGFloat = 5
         let textWidth: CGFloat = 7
         let textX = bounds.width - trailingInset - textWidth
         let barWidth = max(18, textX - gap - leadingInset)
         return (leadingInset, barWidth, textX)
-    }
-
-    private var isDarkMode: Bool {
-        let appearance = appearance ?? NSApp.effectiveAppearance
-        if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
-            return true
-        }
-        return UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark"
     }
 }
 
@@ -469,47 +446,24 @@ struct MenuHeaderView: View {
     let apiService: ZenmuxAPIService
 
     var body: some View {
-        HStack {
-            if let data = apiService.subscriptionData {
-                let status = ZenmuxAccountStatus.from(data.account_status)
-                Image(systemName: status.systemImage)
-                    .foregroundStyle(statusColor(status))
-                    .font(.title3)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Zenmux \(data.plan.tier.capitalized)")
-                        .font(.headline)
-                    HStack(spacing: 4) {
-                        Circle().fill(statusColor(status)).frame(width: 5, height: 5)
-                        Text(status.displayName)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        Text("到期 \(formatDate(data.plan.expires_at))")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                        if apiService.isPaused {
-                            Text("⏸ 暂停")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                }
-            } else {
-                Image(systemName: "circle.dotted")
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("未连接")
-                        .font(.headline)
-                    if let err = apiService.lastError {
-                        Text(err)
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                            .lineLimit(2)
-                    }
-                }
-            }
-            Spacer()
+        HStack(alignment: .center, spacing: 12) {
+            leftSummary
+            Spacer(minLength: 8)
+            rightActions
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 6)
     }
 
     private static let dateFmt: DateFormatter = { let f = DateFormatter(); f.dateFormat = "MM/dd"; return f }()
@@ -522,10 +476,79 @@ struct MenuHeaderView: View {
         return Self.dateFmt.string(from: date)
     }
 
+    @ViewBuilder
+    private var leftSummary: some View {
+        if let data = apiService.subscriptionData {
+            let status = ZenmuxAccountStatus.from(data.account_status)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Zenmux \(data.plan.tier.capitalized)")
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(statusColor(status))
+                        .frame(width: 6, height: 6)
+                    Text(status.displayName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("到期 \(formatDate(data.plan.expires_at))")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("未连接")
+                    .font(.subheadline.weight(.semibold))
+                if let err = apiService.lastError {
+                    Text(err)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+        }
+    }
+
+    private var rightActions: some View {
+        HStack(spacing: 8) {
+            if let updated = apiService.lastUpdated {
+                Text("更新于 \(relativeTime(updated))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Button {
+                if apiService.isPaused {
+                    apiService.resumeAutoRefresh()
+                } else {
+                    apiService.pauseAutoRefresh()
+                }
+            } label: {
+                Image(systemName: apiService.isPaused ? "play.fill" : "pause.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: 18, height: 18)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(apiService.isPaused ? .green : .orange)
+            .accessibilityLabel(apiService.isPaused ? "恢复自动刷新" : "暂停自动刷新")
+        }
+    }
+
+    private func relativeTime(_ date: Date) -> String {
+        let seconds = Int(Date().timeIntervalSince(date))
+        if seconds < 60 { return "\(seconds)秒前" }
+        if seconds < 3600 { return "\(seconds / 60)分前" }
+        return "\(seconds / 3600)时前"
+    }
+
     private func statusColor(_ s: ZenmuxAccountStatus) -> Color {
         switch s {
-        case .healthy: .green; case .monitored: .yellow
-        case .abusive: .orange; case .suspended, .banned: .red
+        case .healthy: .green
+        case .monitored: .yellow
+        case .abusive: .orange
+        case .suspended, .banned: .red
         case .unknown: .gray
         }
     }
@@ -535,10 +558,9 @@ struct MenuHeaderView: View {
 
 struct MenuQuotaView: View {
     let data: ZenmuxSubscriptionData
-    @State private var spinning = false
 
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 12) {
             QuotaRow(
                 label: "5 小时用量", icon: "clock",
                 pct: data.quota_5_hour.usage_percentage,
@@ -558,80 +580,26 @@ struct MenuQuotaView: View {
                 resetsAt: data.quota_7_day.resets_at
             )
 
-            Divider()
-
-            // 月度上限
-            HStack {
-                Image(systemName: "chart.bar.fill")
-                    .font(.subheadline).foregroundStyle(.purple)
-                Text("当月上限")
-                    .font(.subheadline).foregroundStyle(.secondary)
-                Spacer()
-                Text("\(formatNum(data.quota_monthly.max_flows)) flows")
-                    .font(.subheadline).fontWeight(.medium)
-                Text("($\(formatNum(data.quota_monthly.max_value_usd)))")
-                    .font(.subheadline).foregroundStyle(.tertiary)
-            }
-
-            // 汇率信息
-            HStack {
-                Image(systemName: "dollarsign.circle")
-                    .font(.subheadline).foregroundStyle(.green)
-                Text("汇率")
-                    .font(.subheadline).foregroundStyle(.secondary)
-                Spacer()
-                Text("$\(String(format: "%.4f", data.effective_usd_per_flow))/flow")
-                    .font(.subheadline).foregroundStyle(.primary)
-            }
-
-            if let updated = ZenmuxAPIService.shared.lastUpdated {
-                let api = ZenmuxAPIService.shared
-                HStack(spacing: 6) {
-                    Image(systemName: "clock.arrow.trianglehead.counterclockwise.rotate.90")
-                        .font(.subheadline).foregroundStyle(.secondary)
-                    Text("更新于 \(relativeTime(updated))")
-                        .font(.subheadline).foregroundStyle(.tertiary)
-                    Spacer()
-                    Button {
-                        if api.isPaused {
-                            api.resumeAutoRefresh()
-                        } else {
-                            api.pauseAutoRefresh()
-                        }
-                    } label: {
-                        Image(systemName: api.isPaused ? "play.circle" : "pause.circle")
-                            .font(.system(size: 14))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(api.isPaused ? .green : .orange)
-                    .frame(width: 20, height: 20)
-                    Button {
-                        guard !spinning else { return }
-                        spinning = true
-                        Task {
-                            defer {
-                                Task { @MainActor in
-                                    spinning = false
-                                }
-                            }
-                            await api.refreshNow()
-                        }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 14))
-                            .rotationEffect(.degrees(spinning ? 360 : 0))
-                            .animation(spinning ? .linear(duration: 0.6).repeatForever(autoreverses: false) : .default, value: spinning)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(spinning)
-                    .foregroundStyle(.blue)
-                    .frame(width: 20, height: 20)
-                }
-                .frame(height: 22)
+            HStack(spacing: 10) {
+                compactMetricCard(
+                    title: "当月上限",
+                    value: "\(formatNum(data.quota_monthly.max_flows)) flows",
+                    detail: "$\(formatNum(data.quota_monthly.max_value_usd))",
+                    icon: "chart.bar.fill",
+                    tint: .purple
+                )
+                compactMetricCard(
+                    title: "汇率",
+                    value: "$\(String(format: "%.4f", data.effective_usd_per_flow))",
+                    detail: "per flow",
+                    icon: "dollarsign.circle.fill",
+                    tint: .green
+                )
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 4)
+        .padding(.top, 2)
+        .padding(.bottom, 8)
     }
 
     private func formatNum(_ v: Double) -> String {
@@ -639,11 +607,23 @@ struct MenuQuotaView: View {
                    : String(format: "%.2f", v)
     }
 
-    private func relativeTime(_ date: Date) -> String {
-        let s = Int(Date().timeIntervalSince(date))
-        if s < 60 { return "\(s)秒前" }
-        if s < 3600 { return "\(s / 60)分前" }
-        return "\(s / 3600)时前"
+    private func compactMetricCard(title: String, value: String, detail: String, icon: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(title, systemImage: icon)
+                .font(.caption)
+                .foregroundStyle(tint)
+            Text(value)
+                .font(.subheadline.weight(.semibold))
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.primary.opacity(0.045))
+        )
     }
 }
 
@@ -654,42 +634,58 @@ struct QuotaRow: View {
     let resetsAt: String?
 
     var body: some View {
-        VStack(spacing: 3) {
+        VStack(spacing: 8) {
             HStack {
-                Image(systemName: icon).font(.body).foregroundStyle(.blue)
-                Text(label).font(.body).foregroundStyle(.secondary)
+                Label(label, systemImage: icon)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Text(String(format: "%.2f%%", pct * 100))
-                    .font(.body).fontWeight(.medium).monospacedDigit()
-                    .foregroundStyle(pct > 0.8 ? .red : pct > 0.5 ? .orange : .primary)
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(progressColor)
             }
 
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 2).fill(.primary.opacity(0.1)).frame(height: 5)
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.primary.opacity(0.10))
+                        .frame(height: 8)
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(pct > 0.8 ? .red : pct > 0.5 ? .orange : .blue)
-                        .frame(width: max(0, geo.size.width * pct), height: 5)
+                        .fill(progressColor)
+                        .frame(width: max(0, geo.size.width * pct), height: 8)
                 }
             }
-            .frame(height: 5)
+            .frame(height: 8)
 
             HStack {
                 Text("已用 \(String(format: "%.2f", used))/\(String(format: "%.2f", maxFlows)) flows")
-                    .font(.subheadline).foregroundStyle(.secondary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Text("$\(String(format: "%.2f", usedUSD)) / $\(String(format: "%.2f", maxUSD))")
-                    .font(.subheadline).foregroundStyle(.tertiary)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
             }
 
             if let reset = resetsAt {
                 HStack {
                     Text("重置 \(formatReset(reset))")
-                        .font(.subheadline).foregroundStyle(.secondary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Spacer()
                 }
             }
         }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.primary.opacity(0.10), lineWidth: 1)
+        )
     }
 
     private static let resetFmt: DateFormatter = {
@@ -704,5 +700,74 @@ struct QuotaRow: View {
             return String(iso.prefix(16))
         }
         return Self.resetFmt.string(from: date)
+    }
+
+    private var progressColor: Color {
+        if pct > 0.8 { return Color(red: 0.90, green: 0.34, blue: 0.31) }
+        if pct > 0.5 { return Color(red: 0.98, green: 0.67, blue: 0.19) }
+        return Color(red: 0.18, green: 0.56, blue: 0.98)
+    }
+}
+
+// MARK: - 菜单底部操作按钮行
+
+struct MenuActionRow: View {
+    let onSettings: () -> Void
+    let onRefresh: () -> Void
+    let onQuit: () -> Void
+    let isRefreshing: Bool
+    let hasAPIKey: Bool
+    let isShuttingDown: Bool
+
+    var body: some View {
+        HStack(spacing: 0) {
+            actionButton(
+                icon: "gearshape.fill",
+                label: "设置",
+                action: onSettings,
+                disabled: isShuttingDown
+            )
+
+            Divider()
+                .frame(height: 16)
+
+            actionButton(
+                icon: "arrow.clockwise",
+                label: isRefreshing ? "刷新中" : "刷新",
+                action: onRefresh,
+                disabled: !hasAPIKey || isRefreshing || isShuttingDown
+            )
+
+            Divider()
+                .frame(height: 16)
+
+            actionButton(
+                icon: "power",
+                label: "退出",
+                action: onQuit,
+                disabled: false
+            )
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 6)
+    }
+
+    private func actionButton(icon: String, label: String, action: @escaping () -> Void, disabled: Bool) -> some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(height: 16)
+                Text(label)
+                    .font(.system(size: 9, weight: .medium))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(disabled ? .tertiary : .secondary)
+        .disabled(disabled)
+        .accessibilityLabel(label)
     }
 }

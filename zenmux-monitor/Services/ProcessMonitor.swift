@@ -20,14 +20,14 @@ final class ProcessMonitor {
     private var monitoredBundleIDs: Set<String> = []
     private var runningMonitoredApps = Set<String>()
     private var workspaceObservers: [NSObjectProtocol] = []
+    private var isCleaningUp = false
 
     private(set) var isAnyMonitoredAppRunning = false {
         didSet {
-            if isAnyMonitoredAppRunning != oldValue {
-                let name: Notification.Name = isAnyMonitoredAppRunning
-                    ? .monitoredAppDidLaunch : .monitoredAppDidTerminate
-                NotificationCenter.default.post(name: name, object: nil)
-            }
+            guard !isCleaningUp, isAnyMonitoredAppRunning != oldValue else { return }
+            let name: Notification.Name = isAnyMonitoredAppRunning
+                ? .monitoredAppDidLaunch : .monitoredAppDidTerminate
+            NotificationCenter.default.post(name: name, object: nil)
         }
     }
 
@@ -38,6 +38,7 @@ final class ProcessMonitor {
 
     /// 重新加载设置 + 扫描运行状态
     func refresh() {
+        guard !isCleaningUp else { return }
         if SettingsManager.shared.alwaysRefresh {
             isAnyMonitoredAppRunning = true
             return
@@ -67,6 +68,9 @@ final class ProcessMonitor {
     }
 
     func cleanup() {
+        guard !isCleaningUp else { return }
+        isCleaningUp = true
+
         let center = NSWorkspace.shared.notificationCenter
         workspaceObservers.forEach { center.removeObserver($0) }
         workspaceObservers.removeAll()
@@ -76,7 +80,8 @@ final class ProcessMonitor {
     }
 
     private func handleAppLaunch(_ notif: Notification) {
-        guard let app = notif.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+        guard !isCleaningUp,
+              let app = notif.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
               let bundleID = app.bundleIdentifier,
               monitoredBundleIDs.contains(bundleID) else { return }
         runningMonitoredApps.insert(bundleID)
@@ -84,7 +89,8 @@ final class ProcessMonitor {
     }
 
     private func handleAppTerminate(_ notif: Notification) {
-        guard let app = notif.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+        guard !isCleaningUp,
+              let app = notif.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
               let bundleID = app.bundleIdentifier,
               monitoredBundleIDs.contains(bundleID) else { return }
         runningMonitoredApps.remove(bundleID)

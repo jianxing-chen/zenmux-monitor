@@ -95,12 +95,6 @@ final class SettingsManager {
         set { defaults.set(newValue, forKey: Keys.alwaysRefresh) }
     }
 
-    /// 菜单栏百分比文字颜色：true = 黑色，false = 白色（默认）
-    var useBlackText: Bool {
-        get { defaults.bool(forKey: "use_black_text") }
-        set { defaults.set(newValue, forKey: "use_black_text") }
-    }
-
     var cachedSubscriptionData: ZenmuxSubscriptionData? {
         get {
             guard let data = defaults.data(forKey: Keys.cachedSubscriptionData) else {
