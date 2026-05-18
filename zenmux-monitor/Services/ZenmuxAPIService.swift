@@ -63,6 +63,7 @@ final class ZenmuxAPIService {
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var activeRefreshInterval: TimeInterval?
     @ObservationIgnored private var isManuallyPaused = false
+    @ObservationIgnored private var userForceResume = false
     @ObservationIgnored var onStateChange: (@MainActor () -> Void)?
 
     private init() {
@@ -103,12 +104,14 @@ final class ZenmuxAPIService {
     /// 手动暂停自动刷新
     func pauseAutoRefresh() {
         isManuallyPaused = true
+        userForceResume = false
         stopRefreshLoop(markPaused: true)
     }
 
-    /// 手动恢复自动刷新
+    /// 手动恢复自动刷新（绕过 shouldAutoRefresh 检查）
     func resumeAutoRefresh(forceFetch: Bool = true) {
         isManuallyPaused = false
+        userForceResume = true
         reconcileRefreshState(forceFetch: forceFetch)
     }
 
@@ -203,6 +206,11 @@ final class ZenmuxAPIService {
         }
 
         guard shouldAutoRefresh else {
+            if userForceResume {
+                let interval = SettingsManager.shared.refreshInterval
+                startRefreshLoop(interval: interval, immediateFetch: forceFetch || subscriptionData == nil)
+                return
+            }
             stopRefreshLoop(markPaused: true)
             return
         }
