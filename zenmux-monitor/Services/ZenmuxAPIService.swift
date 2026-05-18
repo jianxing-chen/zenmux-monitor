@@ -101,6 +101,13 @@ final class ZenmuxAPIService {
         reconcileRefreshState(forceFetch: forceFetch)
     }
 
+    /// 监控 App 启动时：重置手动暂停，自动恢复监控
+    func appDidLaunch() {
+        isManuallyPaused = false
+        userForceResume = false
+        reconcileRefreshState(forceFetch: true)
+    }
+
     /// 手动暂停自动刷新
     func pauseAutoRefresh() {
         isManuallyPaused = true

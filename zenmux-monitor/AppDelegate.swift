@@ -51,7 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, !self.isShuttingDown else { return }
-                self.apiService.refreshPolicyDidChange(forceFetch: true)
+                self.apiService.appDidLaunch()
             }
         }
 
