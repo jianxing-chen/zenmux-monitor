@@ -244,7 +244,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 final class StatusBarView: NSView {
     weak var apiService: ZenmuxAPIService?
 
-    private static let percentFont = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+    private static let percentFont = NSFont.monospacedDigitSystemFont(ofSize: 9.5, weight: .regular)
     private static let pausedFont = NSFont.systemFont(ofSize: 7)
 
     private struct Palette {
@@ -307,9 +307,11 @@ final class StatusBarView: NSView {
             .foregroundColor: palette.primaryText
         ]
         drawPercent(text: percentStr(data.quota_5_hour.usage_percentage),
-                at: layout.textX, barY: topY, barH: barH, attrs: textAttrs)
+                rightEdge: layout.textRightEdge, barRightEdge: layout.barRightEdge,
+                barY: topY, barH: barH, attrs: textAttrs)
         drawPercent(text: percentStr(data.quota_7_day.usage_percentage),
-                at: layout.textX, barY: bottomY, barH: barH, attrs: textAttrs)
+                rightEdge: layout.textRightEdge, barRightEdge: layout.barRightEdge,
+                barY: bottomY, barH: barH, attrs: textAttrs)
     }
 
     private func drawPaused(_ data: ZenmuxSubscriptionData) {
@@ -354,11 +356,14 @@ final class StatusBarView: NSView {
         String(format: "%2d%%", Int(pct * 100))
     }
 
-    private func drawPercent(text: String, at x: CGFloat, barY: CGFloat, barH: CGFloat,
+    private func drawPercent(text: String, rightEdge: CGFloat, barRightEdge: CGFloat, barY: CGFloat, barH: CGFloat,
                              attrs: [NSAttributedString.Key: Any]) {
         let size = text.size(withAttributes: attrs)
         let y = barY + (barH - size.height) / 2
-        let drawX = max(0, min(x, bounds.maxX - size.width - 0.5))
+        let gap: CGFloat = 5
+        let idealX = rightEdge - size.width
+        let minX = barRightEdge + gap
+        let drawX = max(minX, min(idealX, bounds.maxX - size.width))
         text.draw(at: NSPoint(x: drawX, y: y), withAttributes: attrs)
     }
 
@@ -419,14 +424,16 @@ final class StatusBarView: NSView {
         )
     }
 
-    private var normalLayoutMetrics: (barX: CGFloat, barWidth: CGFloat, textX: CGFloat) {
+    private var normalLayoutMetrics: (barX: CGFloat, barWidth: CGFloat, barRightEdge: CGFloat, textRightEdge: CGFloat) {
         let leadingInset: CGFloat = 4
         let trailingInset: CGFloat = 3
         let gap: CGFloat = 5
         let textWidth: CGFloat = 21
-        let textX = bounds.width - trailingInset - textWidth
+        let textRightEdge = bounds.width - trailingInset
+        let textX = textRightEdge - textWidth
         let barWidth = max(14, textX - gap - leadingInset)
-        return (leadingInset, barWidth, textX)
+        let barRightEdge = leadingInset + barWidth
+        return (leadingInset, barWidth, barRightEdge, textRightEdge)
     }
 
     private var pausedLayoutMetrics: (barX: CGFloat, barWidth: CGFloat, textX: CGFloat) {
