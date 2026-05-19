@@ -244,7 +244,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 final class StatusBarView: NSView {
     weak var apiService: ZenmuxAPIService?
 
-    private static let percentFont = NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .regular)
+    private static let percentFont = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
     private static let pausedFont = NSFont.systemFont(ofSize: 7)
 
     private struct Palette {
