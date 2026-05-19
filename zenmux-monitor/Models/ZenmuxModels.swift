@@ -83,17 +83,6 @@ enum ZenmuxAccountStatus: String {
         }
     }
 
-    var systemImage: String {
-        switch self {
-        case .healthy:   return "checkmark.circle.fill"
-        case .monitored: return "exclamationmark.triangle.fill"
-        case .abusive:   return "xmark.octagon.fill"
-        case .suspended: return "pause.circle.fill"
-        case .banned:    return "slash.circle.fill"
-        case .unknown:   return "questionmark.circle.fill"
-        }
-    }
-
     static func from(_ raw: String) -> ZenmuxAccountStatus {
         ZenmuxAccountStatus(rawValue: raw) ?? .unknown
     }
