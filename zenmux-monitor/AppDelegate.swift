@@ -246,6 +246,17 @@ final class StatusBarView: NSView {
 
     private static let percentFont = NSFont.monospacedDigitSystemFont(ofSize: 9.5, weight: .regular)
     private static let pausedFont = NSFont.systemFont(ofSize: 7)
+    private static let normalLeadingInset: CGFloat = 1.4
+    private static let normalTrailingInset: CGFloat = 0.2
+    private static let barTextGap: CGFloat = 0.6
+
+    private static var percentRightPadding: CGFloat {
+        "0".size(withAttributes: [.font: Self.percentFont]).width * 0.5
+    }
+
+    private static var percentTextReserveWidth: CGFloat {
+        "100%".size(withAttributes: [.font: Self.percentFont]).width + Self.percentRightPadding
+    }
 
     private struct Palette {
         let barBackground: NSColor
@@ -360,9 +371,8 @@ final class StatusBarView: NSView {
                              attrs: [NSAttributedString.Key: Any]) {
         let size = text.size(withAttributes: attrs)
         let y = barY + (barH - size.height) / 2
-        let gap: CGFloat = 5
         let idealX = rightEdge - size.width
-        let minX = barRightEdge + gap
+        let minX = barRightEdge + Self.barTextGap
         let drawX = max(minX, min(idealX, bounds.maxX - size.width))
         text.draw(at: NSPoint(x: drawX, y: y), withAttributes: attrs)
     }
@@ -425,13 +435,13 @@ final class StatusBarView: NSView {
     }
 
     private var normalLayoutMetrics: (barX: CGFloat, barWidth: CGFloat, barRightEdge: CGFloat, textRightEdge: CGFloat) {
-        let leadingInset: CGFloat = 4
-        let trailingInset: CGFloat = 3
-        let gap: CGFloat = 5
-        let textWidth: CGFloat = 21
+        let leadingInset = Self.normalLeadingInset
+        let trailingInset = Self.normalTrailingInset
+        let gap = Self.barTextGap
+        let textWidth = Self.percentTextReserveWidth
         let textRightEdge = bounds.width - trailingInset
         let textX = textRightEdge - textWidth
-        let barWidth = max(14, textX - gap - leadingInset)
+        let barWidth = max(13, textX - gap - leadingInset)
         let barRightEdge = leadingInset + barWidth
         return (leadingInset, barWidth, barRightEdge, textRightEdge)
     }
