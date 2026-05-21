@@ -244,18 +244,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 final class StatusBarView: NSView {
     weak var apiService: ZenmuxAPIService?
 
-    private static let percentFont = NSFont.monospacedDigitSystemFont(ofSize: 9.5, weight: .regular)
+    private static let percentFont = NSFont.monospacedDigitSystemFont(ofSize: 8.0, weight: .regular)
     private static let pausedFont = NSFont.systemFont(ofSize: 7)
-    private static let normalLeadingInset: CGFloat = 1.4
+    private static let normalLeadingInset: CGFloat = 1.2
     private static let normalTrailingInset: CGFloat = 0.2
-    private static let barTextGap: CGFloat = 0.6
+    private static let barTextGap: CGFloat = 0.4
 
     private static var percentRightPadding: CGFloat {
-        "0".size(withAttributes: [.font: Self.percentFont]).width * 0.5
+        "0".size(withAttributes: [.font: Self.percentFont]).width * 0.35
     }
 
     private static var percentTextReserveWidth: CGFloat {
-        "100%".size(withAttributes: [.font: Self.percentFont]).width + Self.percentRightPadding
+        max(
+            "99.9%".size(withAttributes: [.font: Self.percentFont]).width,
+            "100%".size(withAttributes: [.font: Self.percentFont]).width
+        ) + Self.percentRightPadding
     }
 
     private struct Palette {
@@ -364,7 +367,11 @@ final class StatusBarView: NSView {
     }
 
     private func percentStr(_ pct: Double) -> String {
-        String(format: "%2d%%", Int(pct * 100))
+        let percent = (max(0, min(pct, 1)) * 1000).rounded() / 10
+        if percent == 0 || percent == 100 {
+            return String(format: "%.0f%%", percent)
+        }
+        return String(format: "%.1f%%", percent)
     }
 
     private func drawPercent(text: String, rightEdge: CGFloat, barRightEdge: CGFloat, barY: CGFloat, barH: CGFloat,
