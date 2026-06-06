@@ -250,16 +250,16 @@ final class StatusBarView: NSView {
     private static let normalTrailingInset: CGFloat = 0.2
     private static let barTextGap: CGFloat = 0.4
 
-    private static var percentRightPadding: CGFloat {
-        "0".size(withAttributes: [.font: Self.percentFont]).width * 0.35
-    }
+    private static let percentRightPadding: CGFloat = {
+        "0".size(withAttributes: [.font: StatusBarView.percentFont]).width * 0.35
+    }()
 
-    private static var percentTextReserveWidth: CGFloat {
+    private static let percentTextReserveWidth: CGFloat = {
         max(
-            "99.9%".size(withAttributes: [.font: Self.percentFont]).width,
-            "100%".size(withAttributes: [.font: Self.percentFont]).width
-        ) + Self.percentRightPadding
-    }
+            "99.9%".size(withAttributes: [.font: StatusBarView.percentFont]).width,
+            "100%".size(withAttributes: [.font: StatusBarView.percentFont]).width
+        ) + StatusBarView.percentRightPadding
+    }()
 
     private struct Palette {
         let barBackground: NSColor

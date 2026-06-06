@@ -64,6 +64,7 @@ final class ZenmuxAPIService {
     @ObservationIgnored private var activeRefreshInterval: TimeInterval?
     @ObservationIgnored private var isManuallyPaused = false
     @ObservationIgnored private var userForceResume = false
+    @ObservationIgnored private var pendingStateNotify = false
     @ObservationIgnored var onStateChange: (@MainActor () -> Void)?
 
     private init() {
@@ -122,31 +123,25 @@ final class ZenmuxAPIService {
         reconcileRefreshState(forceFetch: forceFetch)
     }
 
-    /// 手动立即刷新一次，但不改变当前暂停状态
+    /// 手动立即刷新一次，但不改变当前暂停状态（内部 force 绕过暂停检查，不翻转 isPaused）
     func refreshNow() async {
-        let shouldStayPaused = isManuallyPaused || !shouldAutoRefresh
-        if shouldStayPaused {
-            // 临时解除暂停以允许 fetch，完成后恢复
-            isPaused = false
-            await fetchSubscription(force: true)
-            isPaused = true
-        } else {
-            await fetchSubscription(force: true)
-        }
+        await fetchSubscription(force: true, bypassPause: true)
     }
 
     /// 获取订阅详情
-    func fetchSubscription(force: Bool = false) async {
+    func fetchSubscription(force: Bool = false, bypassPause: Bool = false) async {
         guard let apiKey = SettingsManager.shared.apiKey, !apiKey.isEmpty else {
             clearForMissingAPIKey()
             return
         }
 
-        // 手动刷新绕过暂停检查
-        if !force, isPaused { return }
+        // bypassPause: 绕过暂停检查（refreshNow 使用），不改变 isPaused 状态
+        if !force, !bypassPause, isPaused { return }
         if isRefreshing { return }
 
-        isPaused = false
+        if !bypassPause {
+            isPaused = false
+        }
         isRefreshing = true
         lastError = nil
 
@@ -274,7 +269,12 @@ final class ZenmuxAPIService {
     }
 
     private func notifyStateChange() {
-        onStateChange?()
+        guard !pendingStateNotify else { return }
+        pendingStateNotify = true
+        Task { @MainActor [weak self] in
+            self?.pendingStateNotify = false
+            self?.onStateChange?()
+        }
     }
 
     private func restoreCachedSnapshotIfAvailable() {
