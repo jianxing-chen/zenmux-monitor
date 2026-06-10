@@ -147,9 +147,7 @@ struct SettingsView: View {
                     } label: {
                         Label("保存", systemImage: "arrow.down.circle.fill")
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .tint(.primary)
+                    .buttonStyle(SettingsProminentButtonStyle(controlSize: .large))
                     .disabled(apiKeyInput.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
 
@@ -334,9 +332,7 @@ struct SettingsView: View {
                     } label: {
                         Label("添加", systemImage: "plus")
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.regular)
-                    .tint(.primary)
+                    .buttonStyle(SettingsProminentButtonStyle(controlSize: .regular))
                     .disabled(newBundleID.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
 
@@ -474,9 +470,7 @@ struct SettingsView: View {
                 persistAPIKey(forceFetch: true)
                 NSApp.keyWindow?.close()
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .tint(.primary)
+            .buttonStyle(SettingsProminentButtonStyle(controlSize: .large))
         }
     }
 
@@ -582,7 +576,99 @@ private enum SettingsPalette {
     static let fillSelected = Color.white.opacity(0.14)
     static let border = Color.white.opacity(0.16)
     static let borderStrong = Color.white.opacity(0.28)
+    static let actionFill = Color(nsColor: .controlAccentColor)
+    static let actionText = Color(nsColor: .alternateSelectedControlTextColor)
     static let tint = primaryText
+}
+
+private struct SettingsProminentButtonStyle: ButtonStyle {
+    let controlSize: ControlSize
+
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(font)
+            .foregroundStyle(isEnabled ? SettingsPalette.actionText : SettingsPalette.secondaryText)
+            .padding(.horizontal, horizontalPadding)
+            .padding(.vertical, verticalPadding)
+            .frame(minHeight: minHeight)
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(backgroundColor(isPressed: configuration.isPressed))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(borderColor(isPressed: configuration.isPressed), lineWidth: 1)
+            )
+            .opacity(isEnabled ? 1 : 0.72)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+
+    private var font: Font {
+        switch controlSize {
+        case .large:
+            return .headline
+        case .mini, .small:
+            return .subheadline.weight(.medium)
+        default:
+            return .subheadline.weight(.semibold)
+        }
+    }
+
+    private var horizontalPadding: CGFloat {
+        switch controlSize {
+        case .large:
+            return 16
+        case .mini, .small:
+            return 10
+        default:
+            return 12
+        }
+    }
+
+    private var verticalPadding: CGFloat {
+        switch controlSize {
+        case .large:
+            return 11
+        case .mini, .small:
+            return 7
+        default:
+            return 9
+        }
+    }
+
+    private var minHeight: CGFloat {
+        switch controlSize {
+        case .large:
+            return 42
+        case .mini, .small:
+            return 30
+        default:
+            return 34
+        }
+    }
+
+    private var cornerRadius: CGFloat {
+        switch controlSize {
+        case .large:
+            return 14
+        case .mini, .small:
+            return 10
+        default:
+            return 12
+        }
+    }
+
+    private func backgroundColor(isPressed: Bool) -> Color {
+        guard isEnabled else { return SettingsPalette.fillSelected }
+        return SettingsPalette.actionFill.opacity(isPressed ? 0.82 : 1)
+    }
+
+    private func borderColor(isPressed: Bool) -> Color {
+        guard isEnabled else { return SettingsPalette.border }
+        return SettingsPalette.actionFill.opacity(isPressed ? 0.38 : 0.52)
+    }
 }
 
 #Preview {
