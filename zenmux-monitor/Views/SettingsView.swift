@@ -45,31 +45,31 @@ struct SettingsView: View {
 
             VStack(spacing: 0) {
                 titleBar
-                    .padding(.horizontal, 14)
-                    .padding(.top, 10)
-                    .padding(.bottom, 8)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+                    .padding(.bottom, 6)
 
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 8) {
                         apiKeySection
                         refreshSection
                         monitoredAppsSection
                         customAppsSection
                         generalSection
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 14)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 12)
                 }
 
                 Divider()
                     .overlay(SettingsPalette.border.opacity(0.7))
 
                 bottomBar
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
             }
         }
-        .frame(minWidth: 540, idealWidth: 580, minHeight: 640, idealHeight: 700)
+        .frame(minWidth: 520, idealWidth: 540, minHeight: 560, idealHeight: 600)
     }
 
     // MARK: - 标题栏
@@ -116,7 +116,7 @@ struct SettingsView: View {
 
     private var apiKeySection: some View {
         sectionCard {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 10) {
                 sectionHeader(
                     title: "Management API Key",
                     caption: "保存后立即拉取最新配额数据。",
@@ -126,14 +126,14 @@ struct SettingsView: View {
                 HStack(spacing: 10) {
                     SecureField("请输入 Zenmux Management API Key", text: $apiKeyInput)
                         .textFieldStyle(.plain)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 11)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
                         .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
                                 .fill(Color.primary.opacity(0.05))
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
                                 .stroke(SettingsPalette.border, lineWidth: 1)
                         )
                         .font(.callout)
@@ -147,7 +147,7 @@ struct SettingsView: View {
                     } label: {
                         Label("保存", systemImage: "arrow.down.circle.fill")
                     }
-                    .buttonStyle(SettingsProminentButtonStyle(controlSize: .large))
+                    .buttonStyle(SettingsProminentButtonStyle())
                     .disabled(apiKeyInput.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
 
@@ -171,7 +171,7 @@ struct SettingsView: View {
 
     private var refreshSection: some View {
         sectionCard {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 10) {
                 sectionHeader(
                     title: "自动刷新",
                     caption: "用尽量少的网络请求维持实时感知。",
@@ -206,7 +206,7 @@ struct SettingsView: View {
 
     private var monitoredAppsSection: some View {
         sectionCard {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 12) {
                     sectionHeader(
                         title: "触发刷新应用",
@@ -310,7 +310,7 @@ struct SettingsView: View {
 
     private var customAppsSection: some View {
         sectionCard {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 10) {
                 sectionHeader(
                     title: "自定义 App",
                     caption: "输入 Bundle Identifier，把任意工具纳入刷新触发列表。",
@@ -319,11 +319,31 @@ struct SettingsView: View {
 
                 HStack(spacing: 10) {
                     TextField("Bundle ID", text: $newBundleID)
-                        .textFieldStyle(.roundedBorder)
+                        .textFieldStyle(.plain)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.primary.opacity(0.05))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(SettingsPalette.border, lineWidth: 1)
+                        )
                         .font(.callout)
 
                     TextField("名称（可选）", text: $newAppName)
-                        .textFieldStyle(.roundedBorder)
+                        .textFieldStyle(.plain)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.primary.opacity(0.05))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(SettingsPalette.border, lineWidth: 1)
+                        )
                         .font(.callout)
                         .frame(width: 130)
 
@@ -332,7 +352,7 @@ struct SettingsView: View {
                     } label: {
                         Label("添加", systemImage: "plus")
                     }
-                    .buttonStyle(SettingsProminentButtonStyle(controlSize: .regular))
+                    .buttonStyle(SettingsProminentButtonStyle())
                     .disabled(newBundleID.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
 
@@ -423,7 +443,7 @@ struct SettingsView: View {
 
     private var generalSection: some View {
         sectionCard {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 10) {
                 sectionHeader(
                     title: "通用",
                     caption: "保持低打扰，仅在你需要时常驻可见。",
@@ -470,7 +490,7 @@ struct SettingsView: View {
                 persistAPIKey(forceFetch: true)
                 NSApp.keyWindow?.close()
             }
-            .buttonStyle(SettingsProminentButtonStyle(controlSize: .large))
+            .buttonStyle(SettingsProminentButtonStyle())
         }
     }
 
@@ -489,10 +509,10 @@ struct SettingsView: View {
     @ViewBuilder
     private func sectionCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         content()
-            .padding(14)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .padding(12)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(SettingsPalette.border, lineWidth: 1)
             )
     }
@@ -576,98 +596,43 @@ private enum SettingsPalette {
     static let fillSelected = Color.white.opacity(0.14)
     static let border = Color.white.opacity(0.16)
     static let borderStrong = Color.white.opacity(0.28)
-    static let actionFill = Color(nsColor: .controlAccentColor)
-    static let actionText = Color(nsColor: .alternateSelectedControlTextColor)
+    static let actionFill = Color.primary.opacity(0.12)
+    static let actionFillPressed = Color.primary.opacity(0.08)
+    static let actionBorder = Color.primary.opacity(0.18)
+    static let actionText = Color.primary
     static let tint = primaryText
 }
 
 private struct SettingsProminentButtonStyle: ButtonStyle {
-    let controlSize: ControlSize
-
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(font)
+            .font(.subheadline.weight(.medium))
             .foregroundStyle(isEnabled ? SettingsPalette.actionText : SettingsPalette.secondaryText)
-            .padding(.horizontal, horizontalPadding)
-            .padding(.vertical, verticalPadding)
-            .frame(minHeight: minHeight)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .frame(minHeight: 28)
             .background(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(backgroundColor(isPressed: configuration.isPressed))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(borderColor(isPressed: configuration.isPressed), lineWidth: 1)
             )
-            .opacity(isEnabled ? 1 : 0.72)
+            .opacity(isEnabled ? 1 : 0.6)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 
-    private var font: Font {
-        switch controlSize {
-        case .large:
-            return .headline
-        case .mini, .small:
-            return .subheadline.weight(.medium)
-        default:
-            return .subheadline.weight(.semibold)
-        }
-    }
-
-    private var horizontalPadding: CGFloat {
-        switch controlSize {
-        case .large:
-            return 16
-        case .mini, .small:
-            return 10
-        default:
-            return 12
-        }
-    }
-
-    private var verticalPadding: CGFloat {
-        switch controlSize {
-        case .large:
-            return 11
-        case .mini, .small:
-            return 7
-        default:
-            return 9
-        }
-    }
-
-    private var minHeight: CGFloat {
-        switch controlSize {
-        case .large:
-            return 42
-        case .mini, .small:
-            return 30
-        default:
-            return 34
-        }
-    }
-
-    private var cornerRadius: CGFloat {
-        switch controlSize {
-        case .large:
-            return 14
-        case .mini, .small:
-            return 10
-        default:
-            return 12
-        }
-    }
-
     private func backgroundColor(isPressed: Bool) -> Color {
-        guard isEnabled else { return SettingsPalette.fillSelected }
-        return SettingsPalette.actionFill.opacity(isPressed ? 0.82 : 1)
+        guard isEnabled else { return SettingsPalette.fill }
+        return isPressed ? SettingsPalette.actionFillPressed : SettingsPalette.actionFill
     }
 
     private func borderColor(isPressed: Bool) -> Color {
         guard isEnabled else { return SettingsPalette.border }
-        return SettingsPalette.actionFill.opacity(isPressed ? 0.38 : 0.52)
+        return SettingsPalette.actionBorder
     }
 }
 
