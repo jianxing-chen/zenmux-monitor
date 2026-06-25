@@ -87,3 +87,21 @@ enum ZenmuxAccountStatus: String {
         ZenmuxAccountStatus(rawValue: raw) ?? .unknown
     }
 }
+
+// MARK: - 共享日期格式化器
+
+/// Zenmux API 返回的 ISO8601 时间（带毫秒）统一解析器。
+/// 全局单例，避免在多处视图重复创建 Formatter（见 DEVELOPMENT.md 5.3）。
+enum ZenmuxDateFormatters {
+    /// 解析 ISO8601（含小数秒），如 `2026-06-25T12:34:56.789Z`。失败返回 nil。
+    static let iso8601: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+}
+
+extension String {
+    /// 将 API 返回的 ISO8601 字符串解析为 `Date`，解析失败返回 nil。
+    var iso8601Date: Date? { ZenmuxDateFormatters.iso8601.date(from: self) }
+}

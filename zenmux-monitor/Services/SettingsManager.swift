@@ -21,7 +21,11 @@ final class SettingsManager {
         static let alwaysRefresh = "always_refresh"
         static let cachedSubscriptionData = "cached_subscription_data"
         static let cachedLastUpdated = "cached_last_updated"
+        static let customApps = "custom_apps"
     }
+
+    /// 刷新间隔下限（秒）。低于此值会触发忙循环与高频请求，写入时强制钳制。
+    static let minRefreshInterval: TimeInterval = 10
 
     private init() {
         defaults.register(defaults: [
@@ -51,8 +55,8 @@ final class SettingsManager {
     // MARK: - UserDefaults 操作
 
     var refreshInterval: TimeInterval {
-        get { defaults.double(forKey: Keys.refreshInterval) }
-        set { defaults.set(newValue, forKey: Keys.refreshInterval) }
+        get { max(Self.minRefreshInterval, defaults.double(forKey: Keys.refreshInterval)) }
+        set { defaults.set(max(Self.minRefreshInterval, newValue), forKey: Keys.refreshInterval) }
     }
 
     var launchAtLogin: Bool {
@@ -73,7 +77,7 @@ final class SettingsManager {
     /// 白名单之外的额外 App（bundleID + 显示名）
     var customApps: [(bundleID: String, name: String)] {
         get {
-            guard let data = defaults.data(forKey: "custom_apps"),
+            guard let data = defaults.data(forKey: Keys.customApps),
                   let arr = try? JSONDecoder().decode([[String]].self, from: data) else {
                 return []
             }
@@ -82,9 +86,12 @@ final class SettingsManager {
             }
         }
         set {
-            let arr = newValue.map { [$0.bundleID, $0.name] }
+            // 按 bundleID 去重，避免重复条目进入存储与监控集合。
+            var seen = Set<String>()
+            let deduped = newValue.filter { seen.insert($0.bundleID).inserted }
+            let arr = deduped.map { [$0.bundleID, $0.name] }
             if let data = try? JSONEncoder().encode(arr) {
-                defaults.set(data, forKey: "custom_apps")
+                defaults.set(data, forKey: Keys.customApps)
             }
         }
     }

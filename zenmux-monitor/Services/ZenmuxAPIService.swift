@@ -65,6 +65,7 @@ final class ZenmuxAPIService {
     @ObservationIgnored private var isManuallyPaused = false
     @ObservationIgnored private var userForceResume = false
     @ObservationIgnored private var pendingStateNotify = false
+    @ObservationIgnored private var isCleanedUp = false
     @ObservationIgnored var onStateChange: (@MainActor () -> Void)?
 
     private init() {
@@ -130,6 +131,7 @@ final class ZenmuxAPIService {
 
     /// 获取订阅详情
     func fetchSubscription(force: Bool = false, bypassPause: Bool = false) async {
+        guard !isCleanedUp else { return }
         guard let apiKey = SettingsManager.shared.apiKey, !apiKey.isEmpty else {
             clearForMissingAPIKey()
             return
@@ -196,6 +198,7 @@ final class ZenmuxAPIService {
     }
 
     private func reconcileRefreshState(forceFetch: Bool) {
+        guard !isCleanedUp else { return }
         guard let apiKey = SettingsManager.shared.apiKey, !apiKey.isEmpty else {
             clearForMissingAPIKey()
             stopRefreshLoop(markPaused: false)
@@ -258,6 +261,8 @@ final class ZenmuxAPIService {
     }
 
     func cleanup() {
+        guard !isCleanedUp else { return }
+        isCleanedUp = true
         stopRefreshLoop(markPaused: false)
         isRefreshing = false
     }

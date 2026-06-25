@@ -10,6 +10,26 @@
 import AppKit
 import SwiftUI
 
+// MARK: - 用量配色（下拉面板统一蓝→橙→红三档）
+
+/// 下拉面板中所有按「占比」变色的控件统一使用此配色，
+/// 避免色值在 QuotaRow / ResetRing 等多处重复定义、改一处忘一处。
+enum UsagePalette {
+    /// 低占比（< 50%）：蓝
+    static let low    = Color(red: 0.18, green: 0.56, blue: 0.98)
+    /// 中占比（50% ~ 80%）：橙
+    static let mid    = Color(red: 0.98, green: 0.67, blue: 0.19)
+    /// 高占比（> 80%）：红
+    static let high   = Color(red: 0.90, green: 0.34, blue: 0.31)
+
+    /// 按占比返回对应档位颜色。
+    static func color(for fraction: Double) -> Color {
+        if fraction > 0.8 { return high }
+        if fraction > 0.5 { return mid }
+        return low
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
     private let menuContentWidth: CGFloat = 336
     private var statusItem: NSStatusItem?
@@ -491,12 +511,9 @@ struct MenuHeaderView: View {
     }
 
     private static let dateFmt: DateFormatter = { let f = DateFormatter(); f.dateFormat = "MM/dd"; return f }()
-    private static let isoFmt: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f
-    }()
 
     private func formatDate(_ iso: String) -> String {
-        guard let date = Self.isoFmt.date(from: iso) else { return String(iso.prefix(10)) }
+        guard let date = iso.iso8601Date else { return String(iso.prefix(10)) }
         return Self.dateFmt.string(from: date)
     }
 
@@ -592,7 +609,8 @@ struct MenuQuotaView: View {
                 maxFlows: data.quota_5_hour.max_flows,
                 usedUSD: data.quota_5_hour.used_value_usd,
                 maxUSD: data.quota_5_hour.max_value_usd,
-                resetsAt: data.quota_5_hour.resets_at
+                resetsAt: data.quota_5_hour.resets_at,
+                windowDuration: 5 * 3600
             )
             QuotaRow(
                 label: "7 天用量", icon: "calendar",
@@ -601,7 +619,8 @@ struct MenuQuotaView: View {
                 maxFlows: data.quota_7_day.max_flows,
                 usedUSD: data.quota_7_day.used_value_usd,
                 maxUSD: data.quota_7_day.max_value_usd,
-                resetsAt: data.quota_7_day.resets_at
+                resetsAt: data.quota_7_day.resets_at,
+                windowDuration: 7 * 24 * 3600
             )
 
             HStack(spacing: 10) {
@@ -656,6 +675,7 @@ struct QuotaRow: View {
     let pct: Double; let used: Double; let maxFlows: Double
     let usedUSD: Double; let maxUSD: Double
     let resetsAt: String?
+    let windowDuration: TimeInterval
 
     var body: some View {
         VStack(spacing: 8) {
@@ -693,11 +713,12 @@ struct QuotaRow: View {
             }
 
             if let reset = resetsAt {
-                HStack {
+                HStack(spacing: 6) {
                     Text("重置 \(formatReset(reset))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
+                    ResetRing(resetsAt: reset, windowDuration: windowDuration)
                 }
             }
         }
@@ -715,21 +736,65 @@ struct QuotaRow: View {
     private static let resetFmt: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "EEE MM/dd HH:mm"; return f
     }()
-    private static let resetIso: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f
-    }()
 
     private func formatReset(_ iso: String) -> String {
-        guard let date = Self.resetIso.date(from: iso) else {
+        guard let date = iso.iso8601Date else {
             return String(iso.prefix(16))
         }
         return Self.resetFmt.string(from: date)
     }
 
     private var progressColor: Color {
-        if pct > 0.8 { return Color(red: 0.90, green: 0.34, blue: 0.31) }
-        if pct > 0.5 { return Color(red: 0.98, green: 0.67, blue: 0.19) }
-        return Color(red: 0.18, green: 0.56, blue: 0.98)
+        UsagePalette.color(for: pct)
+    }
+}
+
+// MARK: - 重置时间圆环（当前时间在滚动周期内的占比）
+
+/// 纯时间标度：圆环转满 = 窗口重置时刻（`resetsAt`）到达。
+/// 滚动窗口周期长度固定（5h / 7d），窗口起点 = `resetsAt - windowDuration`，
+/// 已过占比 = `(now - 起点) / 周期时长`，随时间推进线性增长，到 `resetsAt` 时为 100%。
+struct ResetRing: View {
+    let resetsAt: String
+    let windowDuration: TimeInterval
+
+    /// 当前时间在周期内的占比，取值 [0, 1]。
+    private func fraction(at now: Date) -> Double {
+        guard let end = resetsAt.iso8601Date else { return 0 }
+        // now 已到/过重置时刻 → 周期已满
+        guard now < end else { return 1 }
+        let start = end.addingTimeInterval(-windowDuration)
+        let f = now.timeIntervalSince(start) / windowDuration
+        return min(max(f, 0), 1)
+    }
+
+    var body: some View {
+        // 菜单打开期间每分钟推进一次，避免百分比/圆环长时间停留不动。
+        // 仅在此视图存活（菜单打开）时计时，关闭即随视图释放而停止，零常驻开销。
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            let fraction = fraction(at: context.date)
+            let color = UsagePalette.color(for: fraction)
+            HStack(spacing: 3) {
+                ZStack {
+                    Circle()
+                        .stroke(Color.primary.opacity(0.12), lineWidth: 2.5)
+                    Circle()
+                        .trim(from: 0, to: fraction)
+                        .stroke(
+                            color,
+                            style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
+                        )
+                        .rotationEffect(.degrees(-90))
+                        .animation(.easeInOut(duration: 0.3), value: fraction)
+                }
+                .frame(width: 12, height: 12)
+                Text(String(format: "%d%%", Int(fraction * 100)))
+                    .font(.system(size: 9, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(color)
+            }
+        }
+        .help("周期时间进度：圆环转满即到重置时刻")
     }
 }
 
