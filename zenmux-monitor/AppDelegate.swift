@@ -38,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var appearanceObservers: [NSObjectProtocol] = []
     private var isShuttingDown = false
     private let apiService = ZenmuxAPIService.shared
+    private let deepseekService = DeepSeekAPIService.shared
     private let statusView = StatusBarView(frame: NSRect(x: 0, y: 0, width: 49, height: 22))
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -162,6 +163,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             menu.addItem(loadingItem)
         }
 
+        // DeepSeek 余额区块（仅在已配置 Key 时显示）
+        if SettingsManager.shared.deepseekAPIKey?.isEmpty == false {
+            menu.addItem(.separator())
+            let dsItem = NSMenuItem()
+            let dsView = DeepSeekBalanceView(service: deepseekService)
+            let dsHosting = NSHostingView(rootView: dsView.frame(width: menuContentWidth))
+            let dsSize = dsHosting.fittingSize
+            dsHosting.frame = NSRect(x: 0, y: 0, width: menuContentWidth, height: dsSize.height)
+            dsItem.view = dsHosting
+            menu.addItem(dsItem)
+        }
+
         menu.addItem(.separator())
 
         let actionItem = NSMenuItem()
@@ -212,6 +225,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         Task { [weak self] in
             guard let self, !self.isShuttingDown else { return }
             await self.apiService.refreshNow()
+            await self.deepseekService.fetchBalance()
         }
     }
 
@@ -221,6 +235,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         guard !isShuttingDown else { return }
         if !menu.items.isEmpty { menu.removeAllItems() }
         buildMenuItems(into: menu)
+        // 菜单打开时拉取 DeepSeek 余额（已配置 Key 才会发请求）
+        Task { [weak self] in
+            guard let self, !self.isShuttingDown else { return }
+            await self.deepseekService.fetchBalance()
+        }
     }
 
     func menuDidClose(_ menu: NSMenu) {
@@ -250,6 +269,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
 
         apiService.cleanup()
+        deepseekService.onStateChange = nil
         ProcessMonitor.shared.cleanup()
 
         if let item = statusItem {
@@ -819,6 +839,67 @@ struct ResetRing: View {
             }
         }
         .help("周期时间进度：圆环转满即到重置时刻")
+    }
+}
+
+// MARK: - DeepSeek 余额区块
+
+struct DeepSeekBalanceView: View {
+    let service: DeepSeekAPIService
+
+    private var hasKey: Bool {
+        SettingsManager.shared.deepseekAPIKey?.isEmpty == false
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Label("DeepSeek 余额", systemImage: "creditcard.fill")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if service.isRefreshing {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 14, height: 14)
+                }
+            }
+
+            if let data = service.balanceData, !data.balance_infos.isEmpty {
+                VStack(spacing: 4) {
+                    ForEach(Array(data.balance_infos.enumerated()), id: \.offset) { _, info in
+                        HStack(alignment: .firstTextBaseline) {
+                            Text("\(info.symbol)\(String(format: "%.2f", info.total))")
+                                .font(.title3.weight(.semibold))
+                                .monospacedDigit()
+                            Text(info.currency)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text("赠金 \(info.symbol)\(String(format: "%.2f", info.granted))")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                            Text("充值 \(info.symbol)\(String(format: "%.2f", info.toppedUp))")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+            } else if let err = service.lastError {
+                Text(err)
+                    .font(.caption)
+                    .foregroundStyle(Color(red: 0.90, green: 0.34, blue: 0.31))
+            } else if service.isRefreshing {
+                Text("加载中...")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("无余额数据")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
     }
 }
 

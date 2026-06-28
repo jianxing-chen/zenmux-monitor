@@ -19,6 +19,8 @@ struct SettingsView: View {
     @State private var newBundleID: String = ""
     @State private var newAppName: String = ""
     @State private var alwaysRefresh: Bool
+    @State private var deepseekKeyInput: String = ""
+    @State private var showDeepseekKeySaved = false
 
     private let settings = SettingsManager.shared
     private let apiService = ZenmuxAPIService.shared
@@ -34,6 +36,7 @@ struct SettingsView: View {
         _monitoredApps = State(initialValue: SettingsManager.shared.monitoredAppIDs)
         _customApps = State(initialValue: SettingsManager.shared.customApps)
         _alwaysRefresh = State(initialValue: SettingsManager.shared.alwaysRefresh)
+        _deepseekKeyInput = State(initialValue: SettingsManager.shared.deepseekAPIKey ?? "")
     }
 
     var body: some View {
@@ -52,6 +55,7 @@ struct SettingsView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 8) {
                         apiKeySection
+                        deepseekKeySection
                         refreshSection
                         monitoredAppsSection
                         customAppsSection
@@ -163,6 +167,61 @@ struct SettingsView: View {
                     }
                 }
                 .animation(.easeOut(duration: 0.2), value: showKeySaved)
+            }
+        }
+    }
+
+    // MARK: - DeepSeek API Key 区域
+
+    private var deepseekKeySection: some View {
+        sectionCard {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionHeader(
+                    title: "DeepSeek API Key",
+                    caption: "用于下拉面板显示余额，菜单打开时拉取。",
+                    systemImage: "creditcard.fill"
+                )
+
+                HStack(spacing: 10) {
+                    SecureField("请输入 DeepSeek API Key（sk-...）", text: $deepseekKeyInput)
+                        .textFieldStyle(.plain)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.primary.opacity(0.05))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(SettingsPalette.border, lineWidth: 1)
+                        )
+                        .font(.callout)
+
+                    Button {
+                        let trimmed = deepseekKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                        settings.deepseekAPIKey = trimmed.isEmpty ? nil : trimmed
+                        showDeepseekKeySaved = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                            showDeepseekKeySaved = false
+                        }
+                    } label: {
+                        Label("保存", systemImage: "arrow.down.circle.fill")
+                    }
+                    .buttonStyle(SettingsProminentButtonStyle())
+                }
+
+                HStack(spacing: 8) {
+                    Link("前往 DeepSeek 控制台创建 Key", destination: URL(string: "https://platform.deepseek.com/api_keys")!)
+                        .font(.subheadline)
+
+                    Spacer()
+
+                    if showDeepseekKeySaved {
+                        statusBadge(title: "已保存", icon: "checkmark.circle.fill", tint: SettingsPalette.primaryText)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.easeOut(duration: 0.2), value: showDeepseekKeySaved)
             }
         }
     }

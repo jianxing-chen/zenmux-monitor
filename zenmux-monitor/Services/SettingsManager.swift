@@ -22,6 +22,7 @@ final class SettingsManager {
         static let cachedSubscriptionData = "cached_subscription_data"
         static let cachedLastUpdated = "cached_last_updated"
         static let customApps = "custom_apps"
+        static let deepseekAPIKey = "deepseek_api_key"
     }
 
     /// 刷新间隔下限（秒）。低于此值会触发忙循环与高频请求，写入时强制钳制。
@@ -50,6 +51,14 @@ final class SettingsManager {
                 clearCachedSubscriptionSnapshot()
             }
         }
+    }
+
+    // MARK: - DeepSeek API Key
+
+    /// DeepSeek 平台 API Key（sk-...），用于查询余额。与 Zenmux Management Key 独立。
+    var deepseekAPIKey: String? {
+        get { defaults.string(forKey: Keys.deepseekAPIKey) }
+        set { defaults.set(newValue, forKey: Keys.deepseekAPIKey) }
     }
 
     // MARK: - UserDefaults 操作
