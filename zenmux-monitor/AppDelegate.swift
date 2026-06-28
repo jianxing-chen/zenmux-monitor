@@ -600,6 +600,17 @@ struct MenuHeaderView: View {
 struct MenuQuotaView: View {
     let data: ZenmuxSubscriptionData
 
+    /// 7d 预测占比：当前 7d 用量 + 5h 剩余可用量（即 5h 用满的增量），占 7d 上限的比例。
+    /// 5h 用满时增量=0，预测=实际，阴影与主条重合不可见；5h 越空，阴影越长。
+    private var projected7dPct: Double {
+        let max7d = data.quota_7_day.max_flows
+        guard max7d > 0 else { return 0 }
+        let projectedUsed = data.quota_7_day.used_flows
+            + data.quota_5_hour.max_flows
+            - data.quota_5_hour.used_flows
+        return min(max(projectedUsed / max7d, 0), 1)
+    }
+
     var body: some View {
         VStack(spacing: 12) {
             QuotaRow(
@@ -620,7 +631,8 @@ struct MenuQuotaView: View {
                 usedUSD: data.quota_7_day.used_value_usd,
                 maxUSD: data.quota_7_day.max_value_usd,
                 resetsAt: data.quota_7_day.resets_at,
-                windowDuration: 7 * 24 * 3600
+                windowDuration: 7 * 24 * 3600,
+                projectedPct: projected7dPct
             )
 
             HStack(spacing: 10) {
@@ -676,6 +688,9 @@ struct QuotaRow: View {
     let usedUSD: Double; let maxUSD: Double
     let resetsAt: String?
     let windowDuration: TimeInterval
+    /// 预测占比：若 5h 用量被用满，本窗口（7d）将达到的占比 [0,1]。
+    /// 仅 7d 行传入；nil 表示不渲染预测阴影。
+    var projectedPct: Double? = nil
 
     var body: some View {
         VStack(spacing: 8) {
@@ -692,9 +707,18 @@ struct QuotaRow: View {
 
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
+                    // 底层：轨道
                     RoundedRectangle(cornerRadius: 4)
                         .fill(Color.primary.opacity(0.10))
                         .frame(height: 8)
+                    // 预测阴影：5h 用满后本窗口将达到的位置（半透明，露出主条右侧部分）
+                    // 颜色按预测值判档，提前预警（预测进入中/高档时阴影变橙/红）
+                    if let proj = projectedPct {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(UsagePalette.color(for: proj).opacity(0.22))
+                            .frame(width: max(0, geo.size.width * proj), height: 8)
+                    }
+                    // 主条：当前实际用量（盖在阴影上）
                     RoundedRectangle(cornerRadius: 2)
                         .fill(progressColor)
                         .frame(width: max(0, geo.size.width * pct), height: 8)
