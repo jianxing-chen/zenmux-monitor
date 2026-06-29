@@ -39,7 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var isShuttingDown = false
     private let apiService = ZenmuxAPIService.shared
     private let deepseekService = DeepSeekAPIService.shared
-    private var sizeObservers: [DeepSeekSizeObserver] = []
+    private var sizeObservers: [MenuHostingSizeObserver] = []
     private let statusView = StatusBarView(frame: NSRect(x: 0, y: 0, width: 49, height: 22))
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -150,19 +150,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         headerItem.view = hosting
         menu.addItem(headerItem)
 
-        if let data = apiService.subscriptionData {
-            let quotaItem = NSMenuItem()
-            let quotaView = MenuQuotaView(data: data)
-            let quotaHosting = NSHostingView(rootView: quotaView.frame(width: menuContentWidth))
-            let quotaSize = quotaHosting.fittingSize
-            quotaHosting.frame = NSRect(x: 0, y: 0, width: menuContentWidth, height: quotaSize.height)
-            quotaItem.view = quotaHosting
-            menu.addItem(quotaItem)
-        } else {
-            let loadingItem = NSMenuItem(title: "加载中...", action: nil, keyEquivalent: "")
-            loadingItem.isEnabled = false
-            menu.addItem(loadingItem)
-        }
+        // 配额视图：直接引用 apiService（@Observable），数据更新时自动重绘
+        let quotaItem = NSMenuItem()
+        let quotaView = MenuQuotaView(apiService: apiService)
+        let quotaHosting = NSHostingView(rootView: quotaView.frame(width: menuContentWidth))
+        let quotaSize = quotaHosting.fittingSize
+        quotaHosting.frame = NSRect(x: 0, y: 0, width: menuContentWidth, height: quotaSize.height)
+        quotaItem.view = quotaHosting
+        menu.addItem(quotaItem)
+        // KVO 监听高度变化：缓存被清后重新加载数据时，内容从"加载中"变高，需撑开 frame
+        let quotaObserver = MenuHostingSizeObserver(
+            hostingView: quotaHosting, menu: menu, menuContentWidth: menuContentWidth
+        )
+        sizeObservers.append(quotaObserver)
+        quotaObserver.start()
 
         // DeepSeek 余额区块（仅在已配置 Key 时显示）
         if SettingsManager.shared.deepseekAPIKey?.isEmpty == false {
@@ -177,7 +178,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
             // KVO 监听内容尺寸变化：数据异步返回后 fittingSize 变化，
             // 需更新 frame 避免内容被裁剪（覆盖安装后首次无缓存时尤为明显）
-            let sizeObserver = DeepSeekSizeObserver(
+            let sizeObserver = MenuHostingSizeObserver(
                 hostingView: dsHosting,
                 menu: menu,
                 menuContentWidth: menuContentWidth
@@ -297,11 +298,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 }
 
-// MARK: - DeepSeek 区块高度自适应
+// MARK: - 菜单区块高度自适应
 
 /// KVO 监听 NSHostingView 的 intrinsicContentSize 变化，
 /// 数据异步返回后重算 frame 高度，避免内容被固定高度裁剪。
-final class DeepSeekSizeObserver: NSObject {
+/// 用于 Zenmux 配额区块与 DeepSeek 余额区块。
+final class MenuHostingSizeObserver: NSObject {
     private weak var hostingView: NSView?
     private weak var menu: NSMenu?
     private let menuContentWidth: CGFloat
@@ -672,11 +674,15 @@ struct MenuHeaderView: View {
 // MARK: - 菜单配额视图
 
 struct MenuQuotaView: View {
-    let data: ZenmuxSubscriptionData
+    let apiService: ZenmuxAPIService
+
+    /// 当前订阅数据（实时引用 apiService，@Observable 变化自动驱动重绘）
+    private var data: ZenmuxSubscriptionData? { apiService.subscriptionData }
 
     /// 7d 预测占比：当前 7d 用量 + 5h 剩余可用量（即 5h 用满的增量），占 7d 上限的比例。
     /// 5h 用满时增量=0，预测=实际，阴影与主条重合不可见；5h 越空，阴影越长。
     private var projected7dPct: Double {
+        guard let data else { return 0 }
         let max7d = data.quota_7_day.max_flows
         guard max7d > 0 else { return 0 }
         let projectedUsed = data.quota_7_day.used_flows
@@ -686,39 +692,40 @@ struct MenuQuotaView: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
-            QuotaRow(
-                label: "5 小时用量", icon: "clock",
-                pct: data.quota_5_hour.usage_percentage,
-                used: data.quota_5_hour.used_flows,
-                maxFlows: data.quota_5_hour.max_flows,
-                usedUSD: data.quota_5_hour.used_value_usd,
-                maxUSD: data.quota_5_hour.max_value_usd,
-                resetsAt: data.quota_5_hour.resets_at,
-                windowDuration: 5 * 3600
-            )
-            QuotaRow(
-                label: "7 天用量", icon: "calendar",
-                pct: data.quota_7_day.usage_percentage,
-                used: data.quota_7_day.used_flows,
-                maxFlows: data.quota_7_day.max_flows,
-                usedUSD: data.quota_7_day.used_value_usd,
-                maxUSD: data.quota_7_day.max_value_usd,
-                resetsAt: data.quota_7_day.resets_at,
-                windowDuration: 7 * 24 * 3600,
-                projectedPct: projected7dPct
-            )
-
-            HStack(spacing: 10) {
-                compactMetricCard(
-                    title: "当月上限",
-                    value: "\(formatNum(data.quota_monthly.max_flows)) flows",
-                    detail: "$\(formatNum(data.quota_monthly.max_value_usd))",
-                    icon: "chart.bar.fill",
-                    tint: .purple
+        if let data {
+            VStack(spacing: 12) {
+                QuotaRow(
+                    label: "5 小时用量", icon: "clock",
+                    pct: data.quota_5_hour.usage_percentage,
+                    used: data.quota_5_hour.used_flows,
+                    maxFlows: data.quota_5_hour.max_flows,
+                    usedUSD: data.quota_5_hour.used_value_usd,
+                    maxUSD: data.quota_5_hour.max_value_usd,
+                    resetsAt: data.quota_5_hour.resets_at,
+                    windowDuration: 5 * 3600
                 )
-                compactMetricCard(
-                    title: "汇率",
+                QuotaRow(
+                    label: "7 天用量", icon: "calendar",
+                    pct: data.quota_7_day.usage_percentage,
+                    used: data.quota_7_day.used_flows,
+                    maxFlows: data.quota_7_day.max_flows,
+                    usedUSD: data.quota_7_day.used_value_usd,
+                    maxUSD: data.quota_7_day.max_value_usd,
+                    resetsAt: data.quota_7_day.resets_at,
+                    windowDuration: 7 * 24 * 3600,
+                    projectedPct: projected7dPct
+                )
+
+                HStack(spacing: 10) {
+                    compactMetricCard(
+                        title: "当月上限",
+                        value: "\(formatNum(data.quota_monthly.max_flows)) flows",
+                        detail: "$\(formatNum(data.quota_monthly.max_value_usd))",
+                        icon: "chart.bar.fill",
+                        tint: .purple
+                    )
+                    compactMetricCard(
+                        title: "汇率",
                     value: "$\(String(format: "%.4f", data.effective_usd_per_flow))",
                     detail: "per flow",
                     icon: "dollarsign.circle.fill",
@@ -729,6 +736,13 @@ struct MenuQuotaView: View {
         .padding(.horizontal, 12)
         .padding(.top, 2)
         .padding(.bottom, 4)
+        } else {
+            Text("加载中...")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+        }
     }
 
     private func formatNum(_ v: Double) -> String {
