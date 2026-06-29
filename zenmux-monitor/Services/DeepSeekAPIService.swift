@@ -43,18 +43,13 @@ final class DeepSeekAPIService {
     private let baseURL = URL(string: "https://api.deepseek.com/user/balance")!
 
     /// 最近一次成功获取的余额数据
-    var balanceData: DeepSeekBalanceResponse? {
-        didSet { notifyStateChange() }
-    }
+    var balanceData: DeepSeekBalanceResponse?
     /// 最近一次错误文案（成功后清空）
     var lastError: String?
     /// 最近一次成功更新时间
     private(set) var lastUpdated: Date?
     /// 是否正在请求
     private(set) var isRefreshing = false
-
-    /// 供 StatusBarView/AppDelegate 侦听状态变化重绘
-    var onStateChange: (@MainActor () -> Void)?
 
     private init() {}
 
@@ -72,11 +67,9 @@ final class DeepSeekAPIService {
 
         guard !isRefreshing else { return }
         isRefreshing = true
-        notifyStateChange()
 
         defer {
             isRefreshing = false
-            notifyStateChange()
         }
 
         var request = URLRequest(url: baseURL)
@@ -98,14 +91,5 @@ final class DeepSeekAPIService {
         } catch {
             lastError = DeepSeekAPIError.networkError(error).localizedDescription
         }
-    }
-
-    /// 手动刷新入口（菜单按钮复用 Zenmux 的刷新，这里提供独立入口以备扩展）
-    func refreshNow() async {
-        await fetchBalance()
-    }
-
-    private func notifyStateChange() {
-        onStateChange?()
     }
 }

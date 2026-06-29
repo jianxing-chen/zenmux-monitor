@@ -221,10 +221,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     private func refreshData() {
-        guard !isShuttingDown, !apiService.isRefreshing else { return }
+        guard !isShuttingDown else { return }
+        // Zenmux 与 DeepSeek 各自独立刷新，互不阻断
+        if !apiService.isRefreshing {
+            Task { [weak self] in
+                guard let self, !self.isShuttingDown else { return }
+                await self.apiService.refreshNow()
+            }
+        }
         Task { [weak self] in
             guard let self, !self.isShuttingDown else { return }
-            await self.apiService.refreshNow()
             await self.deepseekService.fetchBalance()
         }
     }
@@ -269,7 +275,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
 
         apiService.cleanup()
-        deepseekService.onStateChange = nil
         ProcessMonitor.shared.cleanup()
 
         if let item = statusItem {
@@ -847,59 +852,64 @@ struct ResetRing: View {
 struct DeepSeekBalanceView: View {
     let service: DeepSeekAPIService
 
-    private var hasKey: Bool {
-        SettingsManager.shared.deepseekAPIKey?.isEmpty == false
-    }
-
     var body: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Label("DeepSeek 余额", systemImage: "creditcard.fill")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                if service.isRefreshing {
-                    ProgressView()
-                        .controlSize(.small)
-                        .frame(width: 14, height: 14)
-                }
-            }
-
+        VStack(spacing: 6) {
             if let data = service.balanceData, !data.balance_infos.isEmpty {
-                VStack(spacing: 4) {
-                    ForEach(Array(data.balance_infos.enumerated()), id: \.offset) { _, info in
-                        HStack(alignment: .firstTextBaseline) {
+                ForEach(Array(data.balance_infos.enumerated()), id: \.offset) { _, info in
+                    // 左标题 + 右余额数字/详情，同一行垂直居中
+                    HStack(alignment: .center) {
+                        Label("DeepSeek 余额", systemImage: "creditcard.fill")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        // 余额数字 + 明细，右对齐成组
+                        VStack(alignment: .trailing, spacing: 1) {
                             Text("\(info.symbol)\(String(format: "%.2f", info.total))")
-                                .font(.title3.weight(.semibold))
+                                .font(.subheadline.weight(.semibold))
                                 .monospacedDigit()
-                            Text(info.currency)
+                                .foregroundStyle(.primary)
+                            Text("赠金 \(info.symbol)\(String(format: "%.2f", info.granted))  充值 \(info.symbol)\(String(format: "%.2f", info.toppedUp))")
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Text("赠金 \(info.symbol)\(String(format: "%.2f", info.granted))")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                            Text("充值 \(info.symbol)\(String(format: "%.2f", info.toppedUp))")
-                                .font(.caption)
+                                .monospacedDigit()
                                 .foregroundStyle(.tertiary)
                         }
                     }
                 }
-            } else if let err = service.lastError {
-                Text(err)
-                    .font(.caption)
-                    .foregroundStyle(Color(red: 0.90, green: 0.34, blue: 0.31))
-            } else if service.isRefreshing {
-                Text("加载中...")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             } else {
-                Text("无余额数据")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                // 无数据时仍保留标题行，保持区块高度一致
+                HStack(alignment: .center) {
+                    Label("DeepSeek 余额", systemImage: "creditcard.fill")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if service.isRefreshing {
+                        ProgressView()
+                            .controlSize(.small)
+                            .frame(width: 14, height: 14)
+                    } else if let err = service.lastError {
+                        Text(err)
+                            .font(.caption)
+                            .foregroundStyle(Color(red: 0.90, green: 0.34, blue: 0.31))
+                    } else {
+                        Text("无余额数据")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
         }
         .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.primary.opacity(0.10), lineWidth: 1)
+        )
+        .padding(.horizontal, 12)
+        .padding(.top, 2)
+        .padding(.bottom, 8)
     }
 }
 
