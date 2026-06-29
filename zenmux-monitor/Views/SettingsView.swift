@@ -200,6 +200,9 @@ struct SettingsView: View {
                     Button {
                         let trimmed = deepseekKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
                         settings.deepseekAPIKey = trimmed.isEmpty ? nil : trimmed
+                        // Key 变更后清除旧账号的余额缓存，避免显示上一个账号的数据
+                        UserDefaults.standard.removeObject(forKey: "deepseek_cached_balance")
+                        UserDefaults.standard.removeObject(forKey: "deepseek_cached_updated")
                         showDeepseekKeySaved = true
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                             showDeepseekKeySaved = false

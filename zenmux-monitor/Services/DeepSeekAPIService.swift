@@ -41,6 +41,7 @@ final class DeepSeekAPIService {
     static let shared = DeepSeekAPIService()
 
     private let baseURL = URL(string: "https://api.deepseek.com/user/balance")!
+    private let cacheKey = "deepseek_cached_balance"
 
     /// 最近一次成功获取的余额数据
     var balanceData: DeepSeekBalanceResponse?
@@ -51,7 +52,25 @@ final class DeepSeekAPIService {
     /// 是否正在请求
     private(set) var isRefreshing = false
 
-    private init() {}
+    private init() {
+        restoreCachedBalance()
+    }
+
+    // MARK: - 缓存恢复/保存
+
+    /// 启动时从 UserDefaults 恢复上次余额，使首次打开菜单即有数据、布局高度正确。
+    private func restoreCachedBalance() {
+        guard let data = UserDefaults.standard.data(forKey: cacheKey),
+              let decoded = try? JSONDecoder().decode(DeepSeekBalanceResponse.self, from: data) else { return }
+        balanceData = decoded
+        lastUpdated = UserDefaults.standard.object(forKey: "deepseek_cached_updated") as? Date
+    }
+
+    private func saveCachedBalance() {
+        guard let data = try? JSONEncoder().encode(balanceData) else { return }
+        UserDefaults.standard.set(data, forKey: cacheKey)
+        UserDefaults.standard.set(lastUpdated, forKey: "deepseek_cached_updated")
+    }
 
     // MARK: - 请求
 
@@ -59,8 +78,10 @@ final class DeepSeekAPIService {
     func fetchBalance() async {
         guard let apiKey = SettingsManager.shared.deepseekAPIKey,
               !apiKey.isEmpty else {
-            // 未配置 Key：清空数据，不当作错误
+            // 未配置 Key：清空数据与缓存，不当作错误
             if balanceData != nil { balanceData = nil }
+            UserDefaults.standard.removeObject(forKey: cacheKey)
+            UserDefaults.standard.removeObject(forKey: "deepseek_cached_updated")
             lastError = nil
             return
         }
@@ -86,6 +107,7 @@ final class DeepSeekAPIService {
             balanceData = decoded
             lastError = nil
             lastUpdated = Date()
+            saveCachedBalance()
         } catch let error as DeepSeekAPIError {
             lastError = error.localizedDescription
         } catch {

@@ -39,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var isShuttingDown = false
     private let apiService = ZenmuxAPIService.shared
     private let deepseekService = DeepSeekAPIService.shared
+    private var sizeObservers: [DeepSeekSizeObserver] = []
     private let statusView = StatusBarView(frame: NSRect(x: 0, y: 0, width: 49, height: 22))
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -173,6 +174,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             dsHosting.frame = NSRect(x: 0, y: 0, width: menuContentWidth, height: dsSize.height)
             dsItem.view = dsHosting
             menu.addItem(dsItem)
+
+            // KVO 监听内容尺寸变化：数据异步返回后 fittingSize 变化，
+            // 需更新 frame 避免内容被裁剪（覆盖安装后首次无缓存时尤为明显）
+            let sizeObserver = DeepSeekSizeObserver(
+                hostingView: dsHosting,
+                menu: menu,
+                menuContentWidth: menuContentWidth
+            )
+            sizeObservers.append(sizeObserver)
+            sizeObserver.start()
         }
 
         menu.addItem(.separator())
@@ -250,6 +261,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     func menuDidClose(_ menu: NSMenu) {
         guard !isShuttingDown else { return }
+        sizeObservers.forEach { $0.stop() }
+        sizeObservers.removeAll()
         menu.removeAllItems()
     }
 
@@ -281,6 +294,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             NSStatusBar.system.removeStatusItem(item)
             statusItem = nil
         }
+    }
+}
+
+// MARK: - DeepSeek 区块高度自适应
+
+/// KVO 监听 NSHostingView 的 intrinsicContentSize 变化，
+/// 数据异步返回后重算 frame 高度，避免内容被固定高度裁剪。
+final class DeepSeekSizeObserver: NSObject {
+    private weak var hostingView: NSView?
+    private weak var menu: NSMenu?
+    private let menuContentWidth: CGFloat
+    private var observation: NSKeyValueObservation?
+
+    init(hostingView: NSView, menu: NSMenu, menuContentWidth: CGFloat) {
+        self.hostingView = hostingView
+        self.menu = menu
+        self.menuContentWidth = menuContentWidth
+    }
+
+    func start() {
+        observation = hostingView?.observe(\.intrinsicContentSize, options: [.new]) { [weak self] view, _ in
+            guard let self else { return }
+            let newSize = view.fittingSize
+            // 仅在高度发生明显变化时更新，避免无意义的重排
+            guard abs(newSize.height - view.frame.height) > 1 else { return }
+            view.frame = NSRect(x: 0, y: 0, width: self.menuContentWidth, height: newSize.height)
+            // 延迟到下一 runloop 触发菜单重排，确保 frame 更先生效
+            DispatchQueue.main.async { [weak self] in
+                self?.menu?.update()
+            }
+        }
+    }
+
+    func stop() {
+        observation?.invalidate()
+        observation = nil
     }
 }
 
@@ -679,7 +728,7 @@ struct MenuQuotaView: View {
         }
         .padding(.horizontal, 12)
         .padding(.top, 2)
-        .padding(.bottom, 8)
+        .padding(.bottom, 4)
     }
 
     private func formatNum(_ v: Double) -> String {
@@ -908,8 +957,8 @@ struct DeepSeekBalanceView: View {
                 .stroke(Color.primary.opacity(0.10), lineWidth: 1)
         )
         .padding(.horizontal, 12)
-        .padding(.top, 2)
-        .padding(.bottom, 8)
+        .padding(.top, 4)
+        .padding(.bottom, 4)
     }
 }
 
