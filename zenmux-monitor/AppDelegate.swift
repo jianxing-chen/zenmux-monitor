@@ -793,6 +793,8 @@ struct QuotaRow: View {
                     .foregroundStyle(progressColor)
             }
 
+            // 进度条 + 时间三角形：三角形覆盖在进度条下方但不占空间，
+            // 整体高度始终 8pt（与 5h 行一致），三角形用 offset 溢出到进度条外。
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     // 底层：轨道
@@ -813,6 +815,16 @@ struct QuotaRow: View {
                 }
             }
             .frame(height: 8)
+            // 时间进度三角形：紧贴进度条底部溢出显示，不占据布局空间
+            .overlay(alignment: .topLeading) {
+                if projectedPct != nil, let reset = resetsAt {
+                    GeometryReader { geo in
+                        TimeMarkerTriangle(resetsAt: reset, windowDuration: windowDuration, color: progressColor, trackWidth: geo.size.width)
+                            .frame(height: 5)
+                            .offset(y: 8)
+                    }
+                }
+            }
 
             HStack {
                 Text("已用 \(String(format: "%.2f", used))/\(String(format: "%.2f", maxFlows)) flows")
@@ -907,6 +919,42 @@ struct ResetRing: View {
             }
         }
         .help("周期时间进度：圆环转满即到重置时刻")
+    }
+}
+
+// MARK: - 时间进度三角形（进度条下方指示标记）
+
+/// 紧贴 7d 进度条下方的小三角形，水平位置 = 圆环的时间占比，
+/// 与右端圆环同步，颜色跟随进度条用量色。不占据布局空间（由 overlay + offset 实现）。
+struct TimeMarkerTriangle: View {
+    let resetsAt: String
+    let windowDuration: TimeInterval
+    let color: Color
+    let trackWidth: CGFloat
+
+    private func fraction(at now: Date) -> Double {
+        guard let end = resetsAt.iso8601Date else { return 0 }
+        guard now < end else { return 1 }
+        let start = end.addingTimeInterval(-windowDuration)
+        let f = now.timeIntervalSince(start) / windowDuration
+        return min(max(f, 0), 1)
+    }
+
+    var body: some View {
+        // 与圆环共享 TimelineView，每分钟推进一次
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            let fraction = fraction(at: context.date)
+            let x = trackWidth * fraction
+            Path { p in
+                // 向下的等腰小三角形，底边 6pt，高 5pt，尖端朝上贴进度条底部
+                p.move(to: CGPoint(x: x, y: 0))
+                p.addLine(to: CGPoint(x: x - 3, y: 5))
+                p.addLine(to: CGPoint(x: x + 3, y: 5))
+                p.closeSubpath()
+            }
+            .fill(color)
+        }
+        .frame(height: 5)
     }
 }
 
