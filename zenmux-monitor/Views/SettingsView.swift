@@ -35,11 +35,6 @@ struct SettingsView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                titleBar
-                    .padding(.horizontal, 12)
-                    .padding(.top, 8)
-                    .padding(.bottom, 6)
-
                 ScrollView {
                     VStack(alignment: .leading, spacing: 8) {
                         apiKeySection
@@ -48,58 +43,18 @@ struct SettingsView: View {
                         generalSection
                     }
                     .padding(.horizontal, 14)
+                    .padding(.top, 12)
                     .padding(.bottom, 12)
                 }
 
                 Divider()
-                    .overlay(SettingsPalette.border.opacity(0.7))
 
                 bottomBar
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
             }
         }
-        .frame(minWidth: 480, idealWidth: 520, minHeight: 400, idealHeight: 440)
-    }
-
-    // MARK: - 标题栏
-
-    private var titleBar: some View {
-        HStack(spacing: 10) {
-            Group {
-                if let appIcon = NSApp.applicationIconImage {
-                    Image(nsImage: appIcon)
-                        .resizable()
-                        .interpolation(.high)
-                } else {
-                    Image(systemName: "waveform.path.ecg.rectangle.fill")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(SettingsPalette.primaryText)
-                }
-            }
-            .frame(width: 28, height: 28)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Zenmux Monitor")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(SettingsPalette.primaryText)
-
-                Text("API 配置与刷新策略")
-                    .font(.system(size: 11))
-                    .foregroundStyle(SettingsPalette.secondaryText)
-            }
-
-            Spacer()
-
-            statusBadge(title: settings.apiKey?.isEmpty == false ? "已连接" : "未配置", icon: "bolt.fill")
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(SettingsPalette.border, lineWidth: 1)
-        )
+        .frame(minWidth: 460, idealWidth: 480, minHeight: 340, idealHeight: 360)
     }
 
     // MARK: - API Key 区域
@@ -173,7 +128,9 @@ struct SettingsView: View {
         sectionCard {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
-                    DeepSeekWhaleIcon()
+                    Image("DeepSeekLogo")
+                        .resizable()
+                        .frame(width: 32, height: 32)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("DeepSeek API")
                             .font(.headline)
@@ -234,33 +191,22 @@ struct SettingsView: View {
 
     private var refreshSection: some View {
         sectionCard {
-            VStack(alignment: .leading, spacing: 10) {
-                sectionHeader(
-                    title: "自动刷新",
-                    caption: "按设定间隔持续拉取最新配额数据。",
-                    systemImage: "arrow.triangle.2.circlepath"
-                )
-
-                Picker("刷新间隔", selection: $refreshInterval) {
-                    Text("30 秒").tag(30.0)
-                    Text("1 分钟").tag(60.0)
-                    Text("5 分钟").tag(300.0)
-                    Text("10 分钟").tag(600.0)
-                    Text("30 分钟").tag(1800.0)
+            HStack {
+                Text("自动刷新间隔")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(SettingsPalette.primaryText)
+                Spacer()
+                Picker("", selection: $refreshInterval) {
+                    Text("30s").tag(30.0)
+                    Text("1m").tag(60.0)
+                    Text("2m").tag(120.0)
+                    Text("5m").tag(300.0)
                 }
                 .pickerStyle(.segmented)
+                .frame(width: 160)
                 .onChange(of: refreshInterval) { _, newValue in
                     settings.refreshInterval = newValue
                     apiService.settingsDidChange(forceFetch: true)
-                }
-
-                HStack(spacing: 6) {
-                    Image(systemName: "info.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("应用持续按选定间隔刷新，菜单内可随时暂停。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -270,35 +216,26 @@ struct SettingsView: View {
 
     private var generalSection: some View {
         sectionCard {
-            VStack(alignment: .leading, spacing: 10) {
-                sectionHeader(
-                    title: "通用",
-                    caption: "保持低打扰，仅在你需要时常驻可见。",
-                    systemImage: "switch.2"
-                )
-
-                Toggle(isOn: $launchAtLogin) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("登录时自动启动")
-                            .font(.subheadline.weight(.medium))
-                        Text("开机后自动驻留菜单栏，免去手动打开。")
-                            .font(.caption)
-                            .foregroundStyle(SettingsPalette.secondaryText)
-                    }
-                }
-                .toggleStyle(.switch)
-                .onChange(of: launchAtLogin) { _, newValue in
-                    settings.launchAtLogin = newValue
-                    do {
-                        if newValue {
-                            try SMAppService.mainApp.register()
-                        } else {
-                            try SMAppService.mainApp.unregister()
+            HStack {
+                Text("登录时自动启动")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(SettingsPalette.primaryText)
+                Spacer()
+                Toggle("", isOn: $launchAtLogin)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    .onChange(of: launchAtLogin) { _, newValue in
+                        settings.launchAtLogin = newValue
+                        do {
+                            if newValue {
+                                try SMAppService.mainApp.register()
+                            } else {
+                                try SMAppService.mainApp.unregister()
+                            }
+                        } catch {
+                            print("自启动设置失败: \(error)")
                         }
-                    } catch {
-                        print("自启动设置失败: \(error)")
                     }
-                }
             }
         }
     }
@@ -341,28 +278,6 @@ struct SettingsView: View {
             )
     }
 
-    private func sectionHeader(title: String, caption: String, systemImage: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(SettingsPalette.fill)
-                    .frame(width: 32, height: 32)
-                Image(systemName: systemImage)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(SettingsPalette.primaryText)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.headline)
-                    .foregroundStyle(SettingsPalette.primaryText)
-                Text(caption)
-                    .font(.subheadline)
-                    .foregroundStyle(SettingsPalette.secondaryText)
-            }
-        }
-    }
-
     private func statusBadge(title: String, icon: String, tint: Color = SettingsPalette.tint) -> some View {
         HStack(spacing: 6) {
             Image(systemName: icon)
@@ -381,39 +296,6 @@ struct SettingsView: View {
             Capsule(style: .continuous)
                 .stroke(SettingsPalette.border, lineWidth: 1)
         )
-    }
-}
-
-// MARK: - DeepSeek 鲸鱼图标
-
-/// DeepSeek 品牌标识：简化的鲸鱼剪影，32×32，蓝色渐变圆底。
-private struct DeepSeekWhaleIcon: View {
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(LinearGradient(
-                    colors: [Color(red: 0.16, green: 0.38, blue: 0.88),
-                             Color(red: 0.26, green: 0.48, blue: 0.95)],
-                    startPoint: .top, endPoint: .bottom))
-                .frame(width: 32, height: 32)
-            // 简化的鲸鱼剪影
-            Path { p in
-                // 身体
-                p.addEllipse(in: CGRect(x: 5, y: 12, width: 18, height: 10))
-                // 尾巴
-                p.move(to: CGPoint(x: 23, y: 15))
-                p.addLine(to: CGPoint(x: 28, y: 8))
-                p.addLine(to: CGPoint(x: 26, y: 17))
-                p.addLine(to: CGPoint(x: 28, y: 24))
-                p.addLine(to: CGPoint(x: 23, y: 19))
-                // 喷水
-                p.move(to: CGPoint(x: 9, y: 11))
-                p.addCurve(to: CGPoint(x: 12, y: 7), control1: CGPoint(x: 10, y: 7), control2: CGPoint(x: 11, y: 7))
-                p.move(to: CGPoint(x: 8, y: 12))
-                p.addCurve(to: CGPoint(x: 7, y: 6), control1: CGPoint(x: 7, y: 8), control2: CGPoint(x: 7, y: 6))
-            }
-            .fill(.white)
-        }
     }
 }
 
@@ -437,30 +319,18 @@ private struct SettingsProminentButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.subheadline.weight(.medium))
-            .foregroundStyle(isEnabled ? SettingsPalette.actionText : SettingsPalette.secondaryText)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .frame(minHeight: 28)
+            .foregroundStyle(isEnabled ? .white : .secondary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .frame(minHeight: 30)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(backgroundColor(isPressed: configuration.isPressed))
+                    .fill(isEnabled
+                        ? (configuration.isPressed ? Color.primary.opacity(0.65) : Color.primary.opacity(0.78))
+                        : Color.primary.opacity(0.12))
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(borderColor(isPressed: configuration.isPressed), lineWidth: 1)
-            )
-            .opacity(isEnabled ? 1 : 0.6)
+            .opacity(isEnabled ? 1 : 0.5)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
-    }
-
-    private func backgroundColor(isPressed: Bool) -> Color {
-        guard isEnabled else { return SettingsPalette.fill }
-        return isPressed ? SettingsPalette.actionFillPressed : SettingsPalette.actionFill
-    }
-
-    private func borderColor(isPressed: Bool) -> Color {
-        guard isEnabled else { return SettingsPalette.border }
-        return SettingsPalette.actionBorder
     }
 }
 
