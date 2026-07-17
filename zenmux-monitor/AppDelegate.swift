@@ -180,14 +180,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         guard !isShuttingDown else { return }
         if settingsWindow == nil {
             let win = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 580, height: 700),
+                contentRect: NSRect(x: 0, y: 0, width: 460, height: 360),
                 styleMask: [.titled, .closable, .miniaturizable, .resizable],
                 backing: .buffered,
                 defer: false
             )
             win.title = "Zenmux 监控设置"
             win.contentView = NSHostingView(rootView: SettingsView())
-            win.minSize = NSSize(width: 540, height: 640)
+            win.minSize = NSSize(width: 420, height: 300)
             win.center()
             win.isReleasedWhenClosed = false
             win.delegate = self

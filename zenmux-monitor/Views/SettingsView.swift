@@ -54,7 +54,7 @@ struct SettingsView: View {
                     .padding(.vertical, 8)
             }
         }
-        .frame(minWidth: 460, idealWidth: 480, minHeight: 340, idealHeight: 360)
+        .frame(minWidth: 420, minHeight: 280)
     }
 
     // MARK: - API Key 区域
