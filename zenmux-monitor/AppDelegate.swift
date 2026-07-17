@@ -817,7 +817,7 @@ struct QuotaRow: View {
             .frame(height: 8)
             // 时间进度三角形：紧贴进度条底部溢出显示，不占据布局空间
             .overlay(alignment: .topLeading) {
-                if projectedPct != nil, let reset = resetsAt {
+                if let reset = resetsAt {
                     GeometryReader { geo in
                         TimeMarkerTriangle(resetsAt: reset, windowDuration: windowDuration, color: progressColor, trackWidth: geo.size.width)
                             .frame(height: 5)
