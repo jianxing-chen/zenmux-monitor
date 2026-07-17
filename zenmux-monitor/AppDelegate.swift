@@ -13,7 +13,7 @@ import SwiftUI
 // MARK: - 用量配色（下拉面板统一蓝→橙→红三档）
 
 /// 下拉面板中所有按「占比」变色的控件统一使用此配色，
-/// 避免色值在 QuotaRow / ResetRing 等多处重复定义、改一处忘一处。
+/// 避免色值在 QuotaRow 等多处重复定义、改一处忘一处。
 enum UsagePalette {
     /// 低占比（< 50%）：蓝
     static let low    = Color(red: 0.18, green: 0.56, blue: 0.98)
@@ -786,6 +786,12 @@ struct QuotaRow: View {
                 Label(label, systemImage: icon)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
+                // 时间进度百分比：紧随标签，与圆环数据同源，纯黑字
+                if resetsAt != nil {
+                    Text("\(timePercentStr)")
+                        .font(.subheadline.weight(.regular))
+                        .foregroundStyle(.primary)
+                }
                 Spacer()
                 Text(String(format: "%.2f%%", pct * 100))
                     .font(.subheadline.weight(.semibold))
@@ -837,12 +843,11 @@ struct QuotaRow: View {
             }
 
             if let reset = resetsAt {
-                HStack(spacing: 6) {
+                HStack {
                     Text("重置 \(formatReset(reset))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
-                    ResetRing(resetsAt: reset, windowDuration: windowDuration)
                 }
             }
         }
@@ -868,57 +873,19 @@ struct QuotaRow: View {
         return Self.resetFmt.string(from: date)
     }
 
-    private var progressColor: Color {
-        UsagePalette.color(for: pct)
-    }
-}
-
-// MARK: - 重置时间圆环（当前时间在滚动周期内的占比）
-
-/// 纯时间标度：圆环转满 = 窗口重置时刻（`resetsAt`）到达。
-/// 滚动窗口周期长度固定（5h / 7d），窗口起点 = `resetsAt - windowDuration`，
-/// 已过占比 = `(now - 起点) / 周期时长`，随时间推进线性增长，到 `resetsAt` 时为 100%。
-struct ResetRing: View {
-    let resetsAt: String
-    let windowDuration: TimeInterval
-
-    /// 当前时间在周期内的占比，取值 [0, 1]。
-    private func fraction(at now: Date) -> Double {
-        guard let end = resetsAt.iso8601Date else { return 0 }
-        // now 已到/过重置时刻 → 周期已满
-        guard now < end else { return 1 }
+    /// 时间占比百分比字符串，如 " · 45%"
+    private var timePercentStr: String {
+        guard let reset = resetsAt, let end = reset.iso8601Date else { return "" }
+        let now = Date()
+        guard now < end else { return " · 100%" }
         let start = end.addingTimeInterval(-windowDuration)
         let f = now.timeIntervalSince(start) / windowDuration
-        return min(max(f, 0), 1)
+        let p = Int(min(max(f, 0), 1) * 100)
+        return " · \(p)%"
     }
 
-    var body: some View {
-        // 菜单打开期间每分钟推进一次，避免百分比/圆环长时间停留不动。
-        // 仅在此视图存活（菜单打开）时计时，关闭即随视图释放而停止，零常驻开销。
-        TimelineView(.periodic(from: .now, by: 60)) { context in
-            let fraction = fraction(at: context.date)
-            let color = UsagePalette.color(for: fraction)
-            HStack(spacing: 3) {
-                ZStack {
-                    Circle()
-                        .stroke(Color.primary.opacity(0.12), lineWidth: 2.5)
-                    Circle()
-                        .trim(from: 0, to: fraction)
-                        .stroke(
-                            color,
-                            style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
-                        )
-                        .rotationEffect(.degrees(-90))
-                        .animation(.easeInOut(duration: 0.3), value: fraction)
-                }
-                .frame(width: 12, height: 12)
-                Text(String(format: "%d%%", Int(fraction * 100)))
-                    .font(.system(size: 9, weight: .semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(color)
-            }
-        }
-        .help("周期时间进度：圆环转满即到重置时刻")
+    private var progressColor: Color {
+        UsagePalette.color(for: pct)
     }
 }
 
