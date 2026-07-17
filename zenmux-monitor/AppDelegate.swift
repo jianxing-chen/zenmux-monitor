@@ -34,7 +34,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private let menuContentWidth: CGFloat = 336
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
-    private var processObservers: [NSObjectProtocol] = []
     private var appearanceObservers: [NSObjectProtocol] = []
     private var isShuttingDown = false
     private let apiService = ZenmuxAPIService.shared
@@ -45,46 +44,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         setupStatusItem()
-        _ = ProcessMonitor.shared
-        observeProcessMonitor()
         observeAPIService()
         observeAppearanceChanges()
         apiService.handleAppLaunch()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        let defaultCenter = NotificationCenter.default
-        processObservers.forEach { defaultCenter.removeObserver($0) }
-        processObservers.removeAll()
 
         let distributedCenter = DistributedNotificationCenter.default()
         appearanceObservers.forEach { distributedCenter.removeObserver($0) }
         appearanceObservers.removeAll()
 
         performShutdownCleanup()
-    }
-
-    // MARK: - 进程启停监听（App 运行时刷新，退出后停刷新）
-
-    private func observeProcessMonitor() {
-        let center = NotificationCenter.default
-
-        let o1 = center.addObserver(forName: .monitoredAppDidLaunch, object: nil, queue: .main) {
-            [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self, !self.isShuttingDown else { return }
-                self.apiService.appDidLaunch()
-            }
-        }
-
-        let o2 = center.addObserver(forName: .monitoredAppDidTerminate, object: nil, queue: .main) {
-            [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self, !self.isShuttingDown else { return }
-                self.apiService.refreshPolicyDidChange()
-            }
-        }
-        processObservers = [o1, o2]
     }
 
     // MARK: - 数据观察（状态变化时刷新进度条）
@@ -289,7 +260,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
 
         apiService.cleanup()
-        ProcessMonitor.shared.cleanup()
 
         if let item = statusItem {
             NSStatusBar.system.removeStatusItem(item)

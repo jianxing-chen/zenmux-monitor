@@ -3,7 +3,7 @@
 //  zenmux-monitor
 //
 //  设置面板视图
-//  功能：配置 Management API Key、刷新间隔等
+//  功能：配置 API Key、刷新间隔等
 //
 
 import SwiftUI
@@ -14,28 +14,16 @@ struct SettingsView: View {
     @State private var refreshInterval: TimeInterval
     @State private var launchAtLogin: Bool
     @State private var showKeySaved = false
-    @State private var monitoredApps: Set<String>
-    @State private var customApps: [(bundleID: String, name: String)]
-    @State private var newBundleID: String = ""
-    @State private var newAppName: String = ""
-    @State private var alwaysRefresh: Bool
     @State private var deepseekKeyInput: String = ""
     @State private var showDeepseekKeySaved = false
 
     private let settings = SettingsManager.shared
     private let apiService = ZenmuxAPIService.shared
-    private let appColumns = [
-        GridItem(.flexible(minimum: 180), spacing: 12),
-        GridItem(.flexible(minimum: 180), spacing: 12)
-    ]
 
     init() {
         _apiKeyInput = State(initialValue: SettingsManager.shared.apiKey ?? "")
         _refreshInterval = State(initialValue: SettingsManager.shared.refreshInterval)
         _launchAtLogin = State(initialValue: SettingsManager.shared.launchAtLogin)
-        _monitoredApps = State(initialValue: SettingsManager.shared.monitoredAppIDs)
-        _customApps = State(initialValue: SettingsManager.shared.customApps)
-        _alwaysRefresh = State(initialValue: SettingsManager.shared.alwaysRefresh)
         _deepseekKeyInput = State(initialValue: SettingsManager.shared.deepseekAPIKey ?? "")
     }
 
@@ -57,8 +45,6 @@ struct SettingsView: View {
                         apiKeySection
                         deepseekKeySection
                         refreshSection
-                        monitoredAppsSection
-                        customAppsSection
                         generalSection
                     }
                     .padding(.horizontal, 14)
@@ -73,7 +59,7 @@ struct SettingsView: View {
                     .padding(.vertical, 8)
             }
         }
-        .frame(minWidth: 520, idealWidth: 540, minHeight: 560, idealHeight: 600)
+        .frame(minWidth: 480, idealWidth: 520, minHeight: 400, idealHeight: 440)
     }
 
     // MARK: - 标题栏
@@ -98,7 +84,7 @@ struct SettingsView: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(SettingsPalette.primaryText)
 
-                Text("API 刷新策略与监控应用管理")
+                Text("API 配置与刷新策略")
                     .font(.system(size: 11))
                     .foregroundStyle(SettingsPalette.secondaryText)
             }
@@ -200,7 +186,6 @@ struct SettingsView: View {
                     Button {
                         let trimmed = deepseekKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
                         settings.deepseekAPIKey = trimmed.isEmpty ? nil : trimmed
-                        // Key 变更后清除旧账号的余额缓存，避免显示上一个账号的数据
                         UserDefaults.standard.removeObject(forKey: "deepseek_cached_balance")
                         UserDefaults.standard.removeObject(forKey: "deepseek_cached_updated")
                         showDeepseekKeySaved = true
@@ -236,7 +221,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 10) {
                 sectionHeader(
                     title: "自动刷新",
-                    caption: "用尽量少的网络请求维持实时感知。",
+                    caption: "按设定间隔持续拉取最新配额数据。",
                     systemImage: "arrow.triangle.2.circlepath"
                 )
 
@@ -256,249 +241,12 @@ struct SettingsView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "clock.badge.checkmark.fill")
                         .foregroundStyle(SettingsPalette.primaryText)
-                    Text(refreshSummaryText)
+                    Text("应用将持续按选定间隔刷新，菜单中可随时暂停。")
                         .font(.subheadline)
                         .foregroundStyle(SettingsPalette.secondaryText)
                 }
             }
         }
-    }
-
-    // MARK: - 监控 App 选择
-
-    private var monitoredAppsSection: some View {
-        sectionCard {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .top, spacing: 12) {
-                    sectionHeader(
-                        title: "触发刷新应用",
-                        caption: alwaysRefresh ? "已忽略应用检测，按设定间隔持续刷新。" : "仅在以下应用活跃时发起自动刷新。",
-                        systemImage: "app.badge"
-                    )
-
-                    Spacer()
-
-                    Toggle("始终刷新", isOn: $alwaysRefresh)
-                        .toggleStyle(.switch)
-                        .font(.subheadline.weight(.medium))
-                        .onChange(of: alwaysRefresh) { _, val in
-                            settings.alwaysRefresh = val
-                            apiService.settingsDidChange(forceFetch: true)
-                        }
-                }
-
-                if !alwaysRefresh {
-                    LazyVGrid(columns: appColumns, alignment: .leading, spacing: 12) {
-                        ForEach(SettingsManager.availableApps, id: \.bundleID) { app in
-                            appToggleCard(app)
-                        }
-                    }
-                } else {
-                    statusRow(
-                        title: "当前模式",
-                        detail: "所有时段都刷新，不再依赖 IDE 或 AI 工具是否开启。",
-                        systemImage: "bolt.circle.fill",
-                        tint: SettingsPalette.primaryText
-                    )
-                }
-            }
-        }
-    }
-
-    private func appToggleCard(_ app: (bundleID: String, name: String)) -> some View {
-        let isSelected = monitoredApps.contains(app.bundleID)
-
-        return Toggle(isOn: binding(for: app.bundleID)) {
-            HStack(spacing: 10) {
-                Group {
-                    if let icon = iconForBundleID(app.bundleID) {
-                        Image(nsImage: icon)
-                            .resizable()
-                            .interpolation(.high)
-                    } else {
-                        Image(systemName: "app.fill")
-                            .resizable()
-                            .scaledToFit()
-                            .padding(4)
-                            .foregroundStyle(SettingsPalette.primaryText)
-                    }
-                }
-                .frame(width: 18, height: 18)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(app.name)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(SettingsPalette.primaryText)
-                        .lineLimit(1)
-                    Text(app.bundleID)
-                        .font(.caption)
-                        .foregroundStyle(SettingsPalette.secondaryText)
-                        .lineLimit(1)
-                }
-            }
-        }
-        .toggleStyle(.checkbox)
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(isSelected ? SettingsPalette.fillSelected : SettingsPalette.fill)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(isSelected ? SettingsPalette.borderStrong : SettingsPalette.border, lineWidth: 1)
-        )
-    }
-
-    private func binding(for bundleID: String) -> Binding<Bool> {
-        Binding(
-            get: { monitoredApps.contains(bundleID) },
-            set: { selected in
-                if selected { monitoredApps.insert(bundleID) }
-                else { monitoredApps.remove(bundleID) }
-                settings.monitoredAppIDs = monitoredApps
-                apiService.settingsDidChange(forceFetch: true)
-            }
-        )
-    }
-
-    private func iconForBundleID(_ id: String) -> NSImage? {
-        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) else {
-            return nil
-        }
-        return NSWorkspace.shared.icon(forFile: url.path)
-    }
-
-    // MARK: - 自定义 App
-
-    private var customAppsSection: some View {
-        sectionCard {
-            VStack(alignment: .leading, spacing: 10) {
-                sectionHeader(
-                    title: "自定义 App",
-                    caption: "输入 Bundle Identifier，把任意工具纳入刷新触发列表。",
-                    systemImage: "plus.square.on.square"
-                )
-
-                HStack(spacing: 10) {
-                    TextField("Bundle ID", text: $newBundleID)
-                        .textFieldStyle(.plain)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(Color.primary.opacity(0.05))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .stroke(SettingsPalette.border, lineWidth: 1)
-                        )
-                        .font(.callout)
-
-                    TextField("名称（可选）", text: $newAppName)
-                        .textFieldStyle(.plain)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(Color.primary.opacity(0.05))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .stroke(SettingsPalette.border, lineWidth: 1)
-                        )
-                        .font(.callout)
-                        .frame(width: 130)
-
-                    Button {
-                        addCustomApp()
-                    } label: {
-                        Label("添加", systemImage: "plus")
-                    }
-                    .buttonStyle(SettingsProminentButtonStyle())
-                    .disabled(newBundleID.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-
-                if customApps.isEmpty {
-                    statusRow(
-                        title: "暂无自定义应用",
-                        detail: "例如 `com.apple.Terminal` 或其他 AI / IDE 工具。",
-                        systemImage: "sparkles.rectangle.stack",
-                        tint: SettingsPalette.secondaryText
-                    )
-                } else {
-                    VStack(spacing: 10) {
-                        ForEach(customApps, id: \.bundleID) { app in
-                            HStack(spacing: 12) {
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .fill(SettingsPalette.fill)
-                                        .frame(width: 32, height: 32)
-                                    Image(systemName: "app.connected.to.app.below.fill")
-                                        .foregroundStyle(SettingsPalette.primaryText)
-                                }
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(app.name)
-                                        .font(.subheadline.weight(.medium))
-                                        .foregroundStyle(SettingsPalette.primaryText)
-                                    Text(app.bundleID)
-                                        .font(.caption)
-                                        .foregroundStyle(SettingsPalette.secondaryText)
-                                        .lineLimit(1)
-                                }
-
-                                Spacer()
-
-                                Button {
-                                    customApps.removeAll { $0.bundleID == app.bundleID }
-                                    persistCustomApps(forceFetch: true)
-                                } label: {
-                                    Image(systemName: "trash")
-                                        .foregroundStyle(SettingsPalette.secondaryText)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("移除 \(app.name)")
-                            }
-                            .padding(12)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(Color.primary.opacity(0.035))
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .stroke(SettingsPalette.border, lineWidth: 1)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func addCustomApp() {
-        let id = newBundleID.trimmingCharacters(in: .whitespaces)
-        let name = newAppName.trimmingCharacters(in: .whitespaces).isEmpty
-            ? id.components(separatedBy: ".").last ?? id
-            : newAppName.trimmingCharacters(in: .whitespaces)
-        guard !id.isEmpty, !customApps.contains(where: { $0.bundleID == id }) else { return }
-        customApps.append((id, name))
-        persistCustomApps(forceFetch: true)
-        newBundleID = ""
-        newAppName = ""
-    }
-
-    private func persistCustomApps(forceFetch: Bool) {
-        settings.customApps = customApps
-        apiService.settingsDidChange(forceFetch: forceFetch)
-    }
-
-    private func persistAPIKey(forceFetch: Bool) {
-        let trimmed = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        let newValue = trimmed.isEmpty ? nil : trimmed
-        let currentValue = settings.apiKey
-        guard currentValue != newValue else { return }
-        settings.apiKey = newValue
-        apiService.settingsDidChange(forceFetch: forceFetch)
     }
 
     // MARK: - 通用设置
@@ -556,16 +304,13 @@ struct SettingsView: View {
         }
     }
 
-    private var refreshSummaryText: String {
-        if alwaysRefresh {
-            return "当前为始终刷新模式，会按选定时间间隔持续更新。"
-        }
-
-        let appCount = monitoredApps.count
-        if appCount == 0 {
-            return "尚未勾选触发应用，自动刷新将在手动刷新时进行。"
-        }
-        return "已选择 \(appCount) 个触发应用，仅在它们运行时自动刷新。"
+    private func persistAPIKey(forceFetch: Bool) {
+        let trimmed = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newValue = trimmed.isEmpty ? nil : trimmed
+        let currentValue = settings.apiKey
+        guard currentValue != newValue else { return }
+        settings.apiKey = newValue
+        apiService.settingsDidChange(forceFetch: forceFetch)
     }
 
     @ViewBuilder
@@ -599,35 +344,6 @@ struct SettingsView: View {
                     .foregroundStyle(SettingsPalette.secondaryText)
             }
         }
-    }
-
-    private func statusRow(title: String, detail: String, systemImage: String, tint: Color) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(tint)
-                .frame(width: 24)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(SettingsPalette.primaryText)
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(SettingsPalette.secondaryText)
-            }
-
-            Spacer()
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(SettingsPalette.fill)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(SettingsPalette.border, lineWidth: 1)
-        )
     }
 
     private func statusBadge(title: String, icon: String, tint: Color = SettingsPalette.tint) -> some View {

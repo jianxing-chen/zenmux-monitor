@@ -63,7 +63,6 @@ final class ZenmuxAPIService {
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var activeRefreshInterval: TimeInterval?
     @ObservationIgnored private var isManuallyPaused = false
-    @ObservationIgnored private var userForceResume = false
     @ObservationIgnored private var pendingStateNotify = false
     @ObservationIgnored private var isCleanedUp = false
     @ObservationIgnored var onStateChange: (@MainActor () -> Void)?
@@ -74,54 +73,43 @@ final class ZenmuxAPIService {
 
     // MARK: - 公开方法
 
-    /// 按当前设置与监控状态重算刷新策略
-    func refreshPolicyDidChange(forceFetch: Bool = false) {
-        reconcileRefreshState(forceFetch: forceFetch)
-    }
-
-    /// 应用启动时初始化状态；若当前不满足常驻刷新条件，也补做一次首刷。
+    /// 应用启动：直接开始按间隔刷新
     func handleAppLaunch() {
         guard let apiKey = SettingsManager.shared.apiKey, !apiKey.isEmpty else {
             clearForMissingAPIKey()
             stopRefreshLoop(markPaused: false)
             return
         }
-
-        let shouldFetchImmediately = shouldAutoRefresh
-        reconcileRefreshState(forceFetch: shouldFetchImmediately)
-
-        guard !shouldFetchImmediately else { return }
-
-        Task { [weak self] in
-            await self?.refreshNow()
-        }
+        let interval = SettingsManager.shared.refreshInterval
+        startRefreshLoop(interval: interval, immediateFetch: true)
     }
 
-    /// 设置变更后重新加载监控状态并应用刷新策略
+    /// 设置变更后重新应用刷新策略
     func settingsDidChange(forceFetch: Bool = true) {
-        ProcessMonitor.shared.refresh()
-        reconcileRefreshState(forceFetch: forceFetch)
-    }
-
-    /// 监控 App 启动时：重置手动暂停，自动恢复监控
-    func appDidLaunch() {
-        isManuallyPaused = false
-        userForceResume = false
-        reconcileRefreshState(forceFetch: true)
+        guard let apiKey = SettingsManager.shared.apiKey, !apiKey.isEmpty else {
+            clearForMissingAPIKey()
+            stopRefreshLoop(markPaused: false)
+            return
+        }
+        guard !isManuallyPaused else {
+            stopRefreshLoop(markPaused: true)
+            return
+        }
+        let interval = SettingsManager.shared.refreshInterval
+        startRefreshLoop(interval: interval, immediateFetch: forceFetch)
     }
 
     /// 手动暂停自动刷新
     func pauseAutoRefresh() {
         isManuallyPaused = true
-        userForceResume = false
         stopRefreshLoop(markPaused: true)
     }
 
-    /// 手动恢复自动刷新（绕过 shouldAutoRefresh 检查）
+    /// 手动恢复自动刷新
     func resumeAutoRefresh(forceFetch: Bool = true) {
         isManuallyPaused = false
-        userForceResume = true
-        reconcileRefreshState(forceFetch: forceFetch)
+        let interval = SettingsManager.shared.refreshInterval
+        startRefreshLoop(interval: interval, immediateFetch: forceFetch)
     }
 
     /// 手动立即刷新一次，但不改变当前暂停状态（内部 force 绕过暂停检查，不翻转 isPaused）
@@ -191,37 +179,6 @@ final class ZenmuxAPIService {
         } catch {
             lastError = ZenmuxAPIErrorType.networkError(error).localizedDescription
         }
-    }
-
-    private var shouldAutoRefresh: Bool {
-        SettingsManager.shared.alwaysRefresh || ProcessMonitor.shared.isAnyMonitoredAppRunning
-    }
-
-    private func reconcileRefreshState(forceFetch: Bool) {
-        guard !isCleanedUp else { return }
-        guard let apiKey = SettingsManager.shared.apiKey, !apiKey.isEmpty else {
-            clearForMissingAPIKey()
-            stopRefreshLoop(markPaused: false)
-            return
-        }
-
-        guard !isManuallyPaused else {
-            stopRefreshLoop(markPaused: true)
-            return
-        }
-
-        guard shouldAutoRefresh else {
-            if userForceResume {
-                let interval = SettingsManager.shared.refreshInterval
-                startRefreshLoop(interval: interval, immediateFetch: forceFetch || subscriptionData == nil)
-                return
-            }
-            stopRefreshLoop(markPaused: true)
-            return
-        }
-
-        let interval = SettingsManager.shared.refreshInterval
-        startRefreshLoop(interval: interval, immediateFetch: forceFetch || subscriptionData == nil)
     }
 
     private func startRefreshLoop(interval: TimeInterval, immediateFetch: Bool) {
