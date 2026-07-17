@@ -783,15 +783,18 @@ struct QuotaRow: View {
     var body: some View {
         VStack(spacing: 8) {
             HStack {
-                Label(label, systemImage: icon)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
-                // 时间进度百分比：紧随标签，与圆环数据同源，纯黑字
-                if resetsAt != nil {
-                    Text("\(timePercentStr)")
-                        .font(.subheadline.weight(.regular))
-                        .foregroundStyle(.primary)
+                HStack(spacing: 2) {
+                    Image(systemName: icon)
+                        .font(.subheadline.weight(.medium))
+                    Text(label)
+                        .font(.subheadline.weight(.medium))
+                    // 时间进度百分比：紧随标签，色与标签一致
+                    if resetsAt != nil {
+                        Text("\(timePercentStr)")
+                            .font(.subheadline.weight(.regular))
+                    }
                 }
+                .foregroundStyle(.secondary)
                 Spacer()
                 Text(String(format: "%.2f%%", pct * 100))
                     .font(.subheadline.weight(.semibold))
