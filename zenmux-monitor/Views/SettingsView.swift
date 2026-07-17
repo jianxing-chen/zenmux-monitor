@@ -107,11 +107,21 @@ struct SettingsView: View {
     private var apiKeySection: some View {
         sectionCard {
             VStack(alignment: .leading, spacing: 10) {
-                sectionHeader(
-                    title: "Management API Key",
-                    caption: "保存后立即拉取最新配额数据。",
-                    systemImage: "key.fill"
-                )
+                HStack(spacing: 10) {
+                    if let appIcon = NSApp.applicationIconImage {
+                        Image(nsImage: appIcon)
+                            .resizable()
+                            .frame(width: 32, height: 32)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Zenmux Platform API")
+                            .font(.headline)
+                            .foregroundStyle(SettingsPalette.primaryText)
+                        Text("保存后立即拉取最新配额数据。")
+                            .font(.subheadline)
+                            .foregroundStyle(SettingsPalette.secondaryText)
+                    }
+                }
 
                 HStack(spacing: 10) {
                     SecureField("请输入 Zenmux Management API Key", text: $apiKeyInput)
@@ -139,20 +149,20 @@ struct SettingsView: View {
                     }
                     .buttonStyle(SettingsProminentButtonStyle())
                     .disabled(apiKeyInput.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-
-                HStack(spacing: 8) {
-                    Link("前往 Zenmux 控制台创建 Key", destination: URL(string: "https://zenmux.ai/platform/management")!)
-                        .font(.subheadline)
-
-                    Spacer()
 
                     if showKeySaved {
-                        statusBadge(title: "已保存", icon: "checkmark.circle.fill", tint: SettingsPalette.primaryText)
+                        statusBadge(title: "已保存", icon: "checkmark.circle.fill", tint: .green)
                             .transition(.opacity)
                     }
                 }
                 .animation(.easeOut(duration: 0.2), value: showKeySaved)
+
+                HStack {
+                    Link("前往 Zenmux 控制台创建 Key", destination: URL(string: "https://zenmux.ai/platform/management")!)
+                        .font(.subheadline)
+                    Spacer()
+                    statusBadge(title: settings.apiKey?.isEmpty == false ? "已连接" : "未配置", icon: "bolt.fill", tint: settings.apiKey?.isEmpty == false ? .green : .secondary)
+                }
             }
         }
     }
@@ -162,11 +172,17 @@ struct SettingsView: View {
     private var deepseekKeySection: some View {
         sectionCard {
             VStack(alignment: .leading, spacing: 10) {
-                sectionHeader(
-                    title: "DeepSeek API Key",
-                    caption: "用于下拉面板显示余额，菜单打开时拉取。",
-                    systemImage: "creditcard.fill"
-                )
+                HStack(spacing: 10) {
+                    DeepSeekWhaleIcon()
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("DeepSeek API")
+                            .font(.headline)
+                            .foregroundStyle(SettingsPalette.primaryText)
+                        Text("用于下拉面板显示余额，菜单打开时拉取。")
+                            .font(.subheadline)
+                            .foregroundStyle(SettingsPalette.secondaryText)
+                    }
+                }
 
                 HStack(spacing: 10) {
                     SecureField("请输入 DeepSeek API Key（sk-...）", text: $deepseekKeyInput)
@@ -196,20 +212,20 @@ struct SettingsView: View {
                         Label("保存", systemImage: "arrow.down.circle.fill")
                     }
                     .buttonStyle(SettingsProminentButtonStyle())
-                }
-
-                HStack(spacing: 8) {
-                    Link("前往 DeepSeek 控制台创建 Key", destination: URL(string: "https://platform.deepseek.com/api_keys")!)
-                        .font(.subheadline)
-
-                    Spacer()
 
                     if showDeepseekKeySaved {
-                        statusBadge(title: "已保存", icon: "checkmark.circle.fill", tint: SettingsPalette.primaryText)
+                        statusBadge(title: "已保存", icon: "checkmark.circle.fill", tint: .green)
                             .transition(.opacity)
                     }
                 }
                 .animation(.easeOut(duration: 0.2), value: showDeepseekKeySaved)
+
+                HStack {
+                    Link("前往 DeepSeek 控制台创建 Key", destination: URL(string: "https://platform.deepseek.com/api_keys")!)
+                        .font(.subheadline)
+                    Spacer()
+                    statusBadge(title: settings.deepseekAPIKey?.isEmpty == false ? "已配置" : "未配置", icon: "bolt.fill", tint: settings.deepseekAPIKey?.isEmpty == false ? .green : .secondary)
+                }
             }
         }
     }
@@ -238,12 +254,13 @@ struct SettingsView: View {
                     apiService.settingsDidChange(forceFetch: true)
                 }
 
-                HStack(spacing: 8) {
-                    Image(systemName: "clock.badge.checkmark.fill")
-                        .foregroundStyle(SettingsPalette.primaryText)
-                    Text("应用将持续按选定间隔刷新，菜单中可随时暂停。")
-                        .font(.subheadline)
-                        .foregroundStyle(SettingsPalette.secondaryText)
+                HStack(spacing: 6) {
+                    Image(systemName: "info.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("应用持续按选定间隔刷新，菜单内可随时暂停。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -364,6 +381,39 @@ struct SettingsView: View {
             Capsule(style: .continuous)
                 .stroke(SettingsPalette.border, lineWidth: 1)
         )
+    }
+}
+
+// MARK: - DeepSeek 鲸鱼图标
+
+/// DeepSeek 品牌标识：简化的鲸鱼剪影，32×32，蓝色渐变圆底。
+private struct DeepSeekWhaleIcon: View {
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(LinearGradient(
+                    colors: [Color(red: 0.16, green: 0.38, blue: 0.88),
+                             Color(red: 0.26, green: 0.48, blue: 0.95)],
+                    startPoint: .top, endPoint: .bottom))
+                .frame(width: 32, height: 32)
+            // 简化的鲸鱼剪影
+            Path { p in
+                // 身体
+                p.addEllipse(in: CGRect(x: 5, y: 12, width: 18, height: 10))
+                // 尾巴
+                p.move(to: CGPoint(x: 23, y: 15))
+                p.addLine(to: CGPoint(x: 28, y: 8))
+                p.addLine(to: CGPoint(x: 26, y: 17))
+                p.addLine(to: CGPoint(x: 28, y: 24))
+                p.addLine(to: CGPoint(x: 23, y: 19))
+                // 喷水
+                p.move(to: CGPoint(x: 9, y: 11))
+                p.addCurve(to: CGPoint(x: 12, y: 7), control1: CGPoint(x: 10, y: 7), control2: CGPoint(x: 11, y: 7))
+                p.move(to: CGPoint(x: 8, y: 12))
+                p.addCurve(to: CGPoint(x: 7, y: 6), control1: CGPoint(x: 7, y: 8), control2: CGPoint(x: 7, y: 6))
+            }
+            .fill(.white)
+        }
     }
 }
 
