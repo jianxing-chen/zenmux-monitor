@@ -41,7 +41,8 @@ enum ZenmuxAPIErrorType: LocalizedError {
 final class ZenmuxAPIService {
     static let shared = ZenmuxAPIService()
 
-    private let baseURL = "https://zenmux.ai/api/v1/management/subscription/detail"
+    /// 当前 API 域名对应的 subscription detail 接口 URL，随 SettingsManager.apiDomain 联动。
+    private var baseURL: URL { SettingsManager.shared.apiDomain.subscriptionDetailURL }
     private static let cacheMaxAge: TimeInterval = 4 * 60 * 60
 
     var subscriptionData: ZenmuxSubscriptionData? {
@@ -140,10 +141,7 @@ final class ZenmuxAPIService {
         }
 
         do {
-            guard let url = URL(string: baseURL) else {
-                throw ZenmuxAPIErrorType.invalidURL
-            }
-
+            let url = baseURL
             var request = URLRequest(url: url)
             request.httpMethod = "GET"
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")

@@ -16,6 +16,7 @@ struct SettingsView: View {
     @State private var showKeySaved = false
     @State private var deepseekKeyInput: String = ""
     @State private var showDeepseekKeySaved = false
+    @State private var apiDomain: ZenmuxAPIDomain
 
     private let settings = SettingsManager.shared
     private let apiService = ZenmuxAPIService.shared
@@ -25,6 +26,7 @@ struct SettingsView: View {
         _refreshInterval = State(initialValue: SettingsManager.shared.refreshInterval)
         _launchAtLogin = State(initialValue: SettingsManager.shared.launchAtLogin)
         _deepseekKeyInput = State(initialValue: SettingsManager.shared.deepseekAPIKey ?? "")
+        _apiDomain = State(initialValue: SettingsManager.shared.apiDomain)
     }
 
     var body: some View {
@@ -76,6 +78,21 @@ struct SettingsView: View {
                             .font(.subheadline)
                             .foregroundStyle(SettingsPalette.secondaryText)
                     }
+
+                    Spacer(minLength: 8)
+
+                    Picker("", selection: $apiDomain) {
+                        Text("zenmux.ai").tag(ZenmuxAPIDomain.zenmuxAI)
+                        Text("zenmux.dev").tag(ZenmuxAPIDomain.zenmuxDEV)
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(width: 116)
+                    .onChange(of: apiDomain) { _, newValue in
+                        settings.apiDomain = newValue
+                        // 域名切换后立即以新域名拉取一次
+                        apiService.settingsDidChange(forceFetch: true)
+                    }
                 }
 
                 HStack(spacing: 10) {
@@ -113,7 +130,7 @@ struct SettingsView: View {
                 .animation(.easeOut(duration: 0.2), value: showKeySaved)
 
                 HStack {
-                    Link("前往 Zenmux 控制台创建 Key", destination: URL(string: "https://zenmux.ai/platform/management")!)
+                    Link("前往 Zenmux 控制台创建 Key", destination: apiDomain.consoleURL)
                         .font(.subheadline)
                     Spacer()
                     statusBadge(title: settings.apiKey?.isEmpty == false ? "已连接" : "未配置", icon: "bolt.fill", tint: settings.apiKey?.isEmpty == false ? .green : .secondary)
